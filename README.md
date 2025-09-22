@@ -7,7 +7,7 @@ This tool helps identify RDR2 native functions in the Red Dead Redemption 2 exec
 The project has been organized into separate modules for better maintainability:
 
 - `NV-Utils.py`: Core functionality for working with native functions.
-- `NV-UI.py`: PyQt-based user interface for a more interactive experience.
+- `NV-UI.py`: PyQt-based user interface for a more interactive experience. - Vibe coded with Claude 3.7/4 :)
 
 ### Features
 
