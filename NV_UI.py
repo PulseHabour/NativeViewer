@@ -266,6 +266,37 @@ class NativeViewerUI(QMainWindow):
         layout = QVBoxLayout(tools_tab)
         self.tab_widget.addTab(tools_tab, "Tools")
 
+        # Load Natives from IDA section
+        load_ida_label = QLabel("<b>Load Natives from IDA:</b>")
+        load_ida_label.setToolTip(
+            "Extract native function information directly from IDA Pro")
+        layout.addWidget(load_ida_label)
+
+        load_ida_layout = QHBoxLayout()
+        load_ida_layout.addWidget(QLabel("RegisterNative Function:"))
+        self.ida_register_name_input = QLineEdit(self.register_native_name)
+        self.ida_register_name_input.setToolTip(
+            "Name of the RegisterNative function to use for extraction")
+        load_ida_layout.addWidget(self.ida_register_name_input)
+
+        load_ida_button = QPushButton("Load Natives from IDA")
+        load_ida_button.clicked.connect(self.load_natives_from_ida)
+        load_ida_button.setToolTip(
+            "Scan IDA Pro for native functions using the specified RegisterNative function")
+        load_ida_layout.addWidget(load_ida_button)
+
+        layout.addLayout(load_ida_layout)
+
+        # Status display for IDA loading
+        self.ida_load_status = QLabel("")
+        layout.addWidget(self.ida_load_status)
+
+        # Separator
+        separator_ida = QFrame()
+        separator_ida.setFrameShape(QFrame.HLine)
+        separator_ida.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(separator_ida)
+
         find_reg_label = QLabel("<b>Find RegisterNative Function:</b>")
         find_reg_label.setToolTip(
             "Find the function that registers native functions in the IDA")
@@ -393,9 +424,20 @@ class NativeViewerUI(QMainWindow):
         # Show progress in status bar
         self.show_status_message("Loading natives from IDA...")
 
+        # Update tools tab status
+        if hasattr(self, 'ida_load_status'):
+            self.ida_load_status.setText("Loading natives from IDA...")
+            self.ida_load_status.setStyleSheet("color: blue")
+
         try:
-            register_func_name = self.register_native_name_input.text(
-            ).strip() or DEFAULT_REGISTER_NATIVE_NAME
+            # Get register function name from the tools tab input if available, otherwise from settings
+            if hasattr(self, 'ida_register_name_input'):
+                register_func_name = self.ida_register_name_input.text().strip()
+            else:
+                register_func_name = self.register_native_name_input.text().strip()
+
+            if not register_func_name:
+                register_func_name = DEFAULT_REGISTER_NATIVE_NAME
 
             try:
                 # We already imported get_all_natives_from_ida at the top of the file
@@ -404,16 +446,20 @@ class NativeViewerUI(QMainWindow):
                     register_native_name=register_func_name)
             except Exception as e:
                 print(f"Error in get_all_natives_from_ida: {str(e)}")
-                self.show_status_message(
-                    f"Failed to load natives: {str(e)}", error=True)
+                error_msg = f"Failed to load natives: {str(e)}"
+                self.show_status_message(error_msg, error=True)
+                if hasattr(self, 'ida_load_status'):
+                    self.ida_load_status.setText(error_msg)
+                    self.ida_load_status.setStyleSheet("color: red")
                 return
 
             # Check if we got any natives back
             if not raw_natives:
-                self.show_status_message(
-                    f"No native functions found using '{register_func_name}'. Check IDA console for details.",
-                    error=True
-                )
+                error_msg = f"No native functions found using '{register_func_name}'. Check IDA console for details."
+                self.show_status_message(error_msg, error=True)
+                if hasattr(self, 'ida_load_status'):
+                    self.ida_load_status.setText(error_msg)
+                    self.ida_load_status.setStyleSheet("color: red")
                 return
 
             # Process natives
@@ -453,13 +499,21 @@ class NativeViewerUI(QMainWindow):
                 f"Search {len(self.natives)} loaded natives...")
 
             # Show success message
-            self.show_status_message(
-                f"Successfully loaded {len(self.natives)} native functions.")
+            success_msg = f"Successfully loaded {len(self.natives)} native functions."
+            self.show_status_message(success_msg)
+
+            # Update tools tab status
+            if hasattr(self, 'ida_load_status'):
+                self.ida_load_status.setText(success_msg)
+                self.ida_load_status.setStyleSheet("color: green")
 
         except Exception as e:
             print(f"Error loading natives: {str(e)}\n{traceback.format_exc()}")
-            self.show_status_message(
-                f"Error loading natives: {str(e)}", error=True)
+            error_msg = f"Error loading natives: {str(e)}"
+            self.show_status_message(error_msg, error=True)
+            if hasattr(self, 'ida_load_status'):
+                self.ida_load_status.setText(error_msg)
+                self.ida_load_status.setStyleSheet("color: red")
 
     def show_status_message(self, message, error=False):
         if error:
