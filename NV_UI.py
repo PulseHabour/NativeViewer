@@ -258,10 +258,6 @@ class NativeViewerUI(QMainWindow):
 
         layout.addLayout(db_buttons_layout)
 
-        # Database operation status
-        self.db_status_label = QLabel("")
-        layout.addWidget(self.db_status_label)
-
         layout.addStretch(1)
 
     def _setup_tools_tab(self):
@@ -1144,7 +1140,7 @@ class NV_DB():
     in SQLite databases.
     """
 
-    def __init__(self, parent=None):
+    def __init__(self, parent: NativeViewerUI):
         """Initialize the database manager with a parent UI reference.
 
         Args:
@@ -1305,10 +1301,7 @@ class NV_DB():
                     conn.rollback()
                     conn.close()
                     if self.parent:
-                        self.parent.db_status_label.setText(
-                            "Operation cancelled")
-                        self.parent.db_status_label.setStyleSheet(
-                            "color: orange")
+                        self.parent.show_status_message("Operation cancelled")
                     return False
 
                 cursor.execute(
@@ -1331,9 +1324,8 @@ class NV_DB():
                 # Get just the filename for display
                 db_filename = os.path.basename(db_path)
 
-                self.parent.db_status_label.setText(
+                self.parent.show_status_message(
                     f"Successfully saved {len(natives)} natives to {db_filename}")
-                self.parent.db_status_label.setStyleSheet("color: green")
 
                 # Store the path in settings
                 self.parent.settings.setValue("last_db_path", db_path)
@@ -1355,8 +1347,7 @@ class NV_DB():
                     "Database Error",
                     f"A database error occurred: {str(e)}"
                 )
-                self.parent.db_status_label.setText(f"Error: {str(e)}")
-                self.parent.db_status_label.setStyleSheet("color: red")
+                self.parent.show_status_message(f"Error: {str(e)}")
 
             print(f"Database error: {str(e)}")
             traceback.print_exc()
@@ -1369,8 +1360,7 @@ class NV_DB():
                     "Error",
                     f"An error occurred: {str(e)}"
                 )
-                self.parent.db_status_label.setText(f"Error: {str(e)}")
-                self.parent.db_status_label.setStyleSheet("color: red")
+                self.parent.show_status_message(f"Error: {str(e)}")
 
             traceback.print_exc()
             return False
@@ -1500,10 +1490,8 @@ class NV_DB():
                 if progress and progress.wasCanceled():
                     conn.close()
                     if self.parent:
-                        self.parent.db_status_label.setText(
-                            "Operation cancelled")
-                        self.parent.db_status_label.setStyleSheet(
-                            "color: orange")
+                        self.parent.show_status_message("Operation cancelled")
+
                     return None
 
                 # Unpack row based on schema
@@ -1555,9 +1543,8 @@ class NV_DB():
                     "font-weight: bold; color: green;")
 
                 # Show success message
-                self.parent.db_status_label.setText(
+                self.parent.show_status_message(
                     f"Successfully loaded {len(natives)} natives from {db_filename}")
-                self.parent.db_status_label.setStyleSheet("color: green")
 
                 # Update search box placeholder to show we have data
                 self.parent.search_box.setPlaceholderText(
@@ -1582,8 +1569,7 @@ class NV_DB():
                     "Database Error",
                     f"A database error occurred: {str(e)}"
                 )
-                self.parent.db_status_label.setText(f"Error: {str(e)}")
-                self.parent.db_status_label.setStyleSheet("color: red")
+                self.parent.show_status_message(f"Error: {str(e)}")
 
             print(f"Database error: {str(e)}")
             traceback.print_exc()
@@ -1596,8 +1582,7 @@ class NV_DB():
                     "Error",
                     f"An error occurred: {str(e)}"
                 )
-                self.parent.db_status_label.setText(f"Error: {str(e)}")
-                self.parent.db_status_label.setStyleSheet("color: red")
+                self.parent.show_status_message(f"Error: {str(e)}")
 
             traceback.print_exc()
             return None
