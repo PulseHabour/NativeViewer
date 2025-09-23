@@ -1,4 +1,5 @@
-import datetime
+
+from typing import Optional, List, Dict, Any
 from idaapi import require  # noqa
 require('NV_Utils')  # noqa
 
@@ -6,12 +7,10 @@ from NV_Utils import OFFSET_TO_HASH, OFFSET_TO_LEA, FindGameBuild, FindRegisterN
 
 
 import os
-import sys
 import json
-import traceback
 import sqlite3
 import datetime
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
     QWidget,
@@ -29,10 +28,11 @@ from PyQt5.QtWidgets import (
     QFrame,
     QProgressDialog,
     QStatusBar,
-    QMenu
+    QMenu,
+    QCheckBox
 )
-from PyQt5.QtCore import QSettings, Qt, QTimer
-from PyQt5.QtGui import QCursor
+from PySide6.QtCore import QSettings, Qt, QTimer
+from PySide6.QtGui import QCursor, QClipboard
 
 
 DEFAULT_REGISTER_NATIVE_NAME = "RegisterNative"
@@ -56,27 +56,25 @@ WINDOW_HEIGHT = 700
 
 class NativeViewerUI(QMainWindow):
 
-    def __init__(self, clipboard):
+    def __init__(self, clipboard: QClipboard):
 
         super().__init__()
 
-        self.clipboard = clipboard
+        self.clipboard: QClipboard = clipboard
 
         self.app = APP_DOMAIN
 
-        self.natives = []
-        self.native_names_map = {}
-        self.current_db_path = None
+        self.natives: List[Dict[str, Any]] = []
+        self.native_names_map: Dict[str, Dict[str, str]] = {}
+        self.current_db_path: Optional[str] = None
 
-        # Initialize debounce timer for search filtering
         self.filter_timer = QTimer()
         self.filter_timer.setSingleShot(True)
         self.filter_timer.timeout.connect(self.filter_table)
 
-        self.lastFilteredNatives = []
-        self.lastSearchText = ""
+        self.lastFilteredNatives: List[Dict[str, Any]] = []
+        self.lastSearchText: str = ""
 
-        # Initialize database manager with parent reference
         self.DB = NV_DB(self)
 
         self.setWindowTitle(APP_NAME)
@@ -116,7 +114,42 @@ class NativeViewerUI(QMainWindow):
         self.search_box.textChanged.connect(self._start_filter_timer)
         search_layout.addWidget(self.search_box)
 
-        top_layout.addLayout(search_layout, 3)
+        # Add filter checkboxes
+        filter_checkboxes_layout = QHBoxLayout()
+        filter_checkboxes_layout.addWidget(QLabel("Filter by:"))
+
+        self.filter_hash_cb = QCheckBox("Hash")
+        self.filter_hash_cb.setChecked(True)
+        self.filter_hash_cb.stateChanged.connect(self._start_filter_timer)
+        filter_checkboxes_layout.addWidget(self.filter_hash_cb)
+
+        self.filter_addr_cb = QCheckBox("Address")
+        self.filter_addr_cb.setChecked(True)
+        self.filter_addr_cb.stateChanged.connect(self._start_filter_timer)
+        filter_checkboxes_layout.addWidget(self.filter_addr_cb)
+
+        self.filter_name_cb = QCheckBox("Function Name")
+        self.filter_name_cb.setChecked(True)
+        self.filter_name_cb.stateChanged.connect(self._start_filter_timer)
+        filter_checkboxes_layout.addWidget(self.filter_name_cb)
+
+        self.filter_native_name_cb = QCheckBox("Native Name")
+        self.filter_native_name_cb.setChecked(True)
+        self.filter_native_name_cb.stateChanged.connect(
+            self._start_filter_timer)
+        filter_checkboxes_layout.addWidget(self.filter_native_name_cb)
+
+        self.filter_namespace_cb = QCheckBox("Namespace")
+        self.filter_namespace_cb.setChecked(True)
+        self.filter_namespace_cb.stateChanged.connect(self._start_filter_timer)
+        filter_checkboxes_layout.addWidget(self.filter_namespace_cb)
+
+        # Add both layouts to a vertical layout
+        search_container = QVBoxLayout()
+        search_container.addLayout(search_layout)
+        search_container.addLayout(filter_checkboxes_layout)
+
+        top_layout.addLayout(search_container, 3)
 
         export_layout = QHBoxLayout()
 
@@ -129,27 +162,46 @@ class NativeViewerUI(QMainWindow):
         layout.addWidget(self.data_source_label)
 
         self.natives_table = QTableWidget()
-        self.natives_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.natives_table.setEditTriggers(
+            QTableWidget.EditTrigger.NoEditTriggers)
         self.natives_table.setColumnCount(6)
         self.natives_table.setHorizontalHeaderLabels(
-            ["Hash", "Address", "Function Name", "Native Name", "Native Namespace", "Actions"])
-        # Set up right-click menu
+            [
+                "Hash",
+                "Address",
+                "Function Name",
+                "Native Name",
+                "Native Namespace",
+                "Actions"
+            ]
+        )
+
         self.natives_table.setContextMenuPolicy(
-            Qt.ContextMenuPolicy.CustomContextMenu)
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
         self.natives_table.customContextMenuRequested.connect(
-            self.show_context_menu)
+            self.show_context_menu
+        )
 
-        self.natives_table.verticalHeader().setVisible(False)
+        verticalHeader = self.natives_table.verticalHeader()
 
-        # Configure table headers
+        if verticalHeader:
+            verticalHeader.setVisible(False)
+
         header = self.natives_table.horizontalHeader()
         if header:
-            header.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(4, QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(5, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(
+                0, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(
+                1, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(
+                2, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(
+                3, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(
+                4, QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(
+                5, QHeaderView.ResizeMode.ResizeToContents)
             header.setStretchLastSection(True)
 
         layout.addWidget(self.natives_table)
@@ -164,15 +216,16 @@ class NativeViewerUI(QMainWindow):
 
         reg_name_layout = QHBoxLayout()
         reg_name_layout.addWidget(QLabel("RegisterNative Function Name:"))
-        self.register_native_name_input = QLineEdit(self.register_native_name)
+        self.register_native_name_input = QLineEdit()
+        self.register_native_name_input.setText(str(self.register_native_name))
         self.register_native_name_input.setToolTip(
             "Name of the function that registers native functions")
         reg_name_layout.addWidget(self.register_native_name_input)
         layout.addLayout(reg_name_layout)
 
         separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
         layout.addWidget(separator)
 
         offset_label = QLabel("<b>Offset Settings:</b>")
@@ -195,8 +248,8 @@ class NativeViewerUI(QMainWindow):
         layout.addLayout(lea_offset_layout)
 
         separator2 = QFrame()
-        separator2.setFrameShape(QFrame.HLine)
-        separator2.setFrameShadow(QFrame.Sunken)
+        separator2.setFrameShape(QFrame.Shape.HLine)
+        separator2.setFrameShadow(QFrame.Shadow.Sunken)
         layout.addWidget(separator2)
 
         buttons_layout = QHBoxLayout()
@@ -223,8 +276,8 @@ class NativeViewerUI(QMainWindow):
         layout.addWidget(self.settings_status_label)
 
         separator3 = QFrame()
-        separator3.setFrameShape(QFrame.HLine)
-        separator3.setFrameShadow(QFrame.Sunken)
+        separator3.setFrameShape(QFrame.Shape.HLine)
+        separator3.setFrameShadow(QFrame.Shadow.Sunken)
         layout.addWidget(separator3)
 
         # SQLite Database section
@@ -241,7 +294,7 @@ class NativeViewerUI(QMainWindow):
         save_db_layout.addWidget(self.db_file_path)
 
         browse_button = QPushButton("Browse")
-        browse_button.clicked.connect(self.browse_db_file)
+        browse_button.clicked.connect(self.DB.browse_db_file)
         save_db_layout.addWidget(browse_button)
 
         layout.addLayout(save_db_layout)
@@ -250,13 +303,15 @@ class NativeViewerUI(QMainWindow):
         db_buttons_layout = QHBoxLayout()
 
         save_natives_button = QPushButton("Save Natives to DB")
-        save_natives_button.clicked.connect(self.save_natives_to_db)
+        save_natives_button.clicked.connect(
+            lambda: self.DB.save_natives_to_db(self.natives))
         save_natives_button.setToolTip(
             "Save currently loaded native functions to the specified database file")
         db_buttons_layout.addWidget(save_natives_button)
 
         load_natives_button = QPushButton("Load Natives from DB")
-        load_natives_button.clicked.connect(self.load_natives_from_db)
+        load_natives_button.clicked.connect(
+            lambda: self.DB.load_natives_from_db())
         load_natives_button.setToolTip(
             "Load native functions from the specified database file")
         db_buttons_layout.addWidget(load_natives_button)
@@ -279,7 +334,8 @@ class NativeViewerUI(QMainWindow):
 
         load_ida_layout = QHBoxLayout()
         load_ida_layout.addWidget(QLabel("RegisterNative Function:"))
-        self.ida_register_name_input = QLineEdit(self.register_native_name)
+        self.ida_register_name_input = QLineEdit()
+        self.ida_register_name_input.setText(str(self.register_native_name))
         self.ida_register_name_input.setToolTip(
             "Name of the RegisterNative function to use for extraction")
         load_ida_layout.addWidget(self.ida_register_name_input)
@@ -298,8 +354,8 @@ class NativeViewerUI(QMainWindow):
 
         # Separator
         separator_ida = QFrame()
-        separator_ida.setFrameShape(QFrame.HLine)
-        separator_ida.setFrameShadow(QFrame.Sunken)
+        separator_ida.setFrameShape(QFrame.Shape.HLine)
+        separator_ida.setFrameShadow(QFrame.Shadow.Sunken)
         layout.addWidget(separator_ida)
 
         find_reg_label = QLabel("<b>Find RegisterNative Function:</b>")
@@ -309,7 +365,8 @@ class NativeViewerUI(QMainWindow):
 
         find_reg_layout = QHBoxLayout()
         find_reg_layout.addWidget(QLabel("Function Name:"))
-        self.find_reg_name_input = QLineEdit(self.register_native_name)
+        self.find_reg_name_input = QLineEdit()
+        self.find_reg_name_input.setText(str(self.register_native_name))
         find_reg_layout.addWidget(self.find_reg_name_input)
 
         find_reg_button = QPushButton("Find RegisterNative")
@@ -339,8 +396,8 @@ class NativeViewerUI(QMainWindow):
 
         # Separator
         separator = QFrame()
-        separator.setFrameShape(QFrame.HLine)
-        separator.setFrameShadow(QFrame.Sunken)
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
         layout.addWidget(separator)
 
         # Game Build Search section
@@ -362,8 +419,8 @@ class NativeViewerUI(QMainWindow):
 
         # Separator
         separator2 = QFrame()
-        separator2.setFrameShape(QFrame.HLine)
-        separator2.setFrameShadow(QFrame.Sunken)
+        separator2.setFrameShape(QFrame.Shape.HLine)
+        separator2.setFrameShadow(QFrame.Shadow.Sunken)
         layout.addWidget(separator2)
 
         # RDR3natives.json section
@@ -380,12 +437,6 @@ class NativeViewerUI(QMainWindow):
             "Reload native names from local RDR3natives.json file")
         # load_natives_json_button.clicked.connect(self.reload_native_names)
         natives_json_layout.addWidget(load_natives_json_button)
-
-        check_updates_button = QPushButton("Check for Updates")
-        check_updates_button.setToolTip(
-            "Check if there is a newer version of RDR3natives.json on GitHub")
-       # check_updates_button.clicked.connect(self.check_natives_json_updates)
-        natives_json_layout.addWidget(check_updates_button)
 
         layout.addLayout(natives_json_layout)
 
@@ -404,10 +455,11 @@ class NativeViewerUI(QMainWindow):
         msg_box.setText("Wwould you like to load natives?")
 
         # Add buttons with specific roles
-        ida_button = msg_box.addButton("Load from IDA", QMessageBox.ActionRole)
+        ida_button = msg_box.addButton(
+            "Load from IDA", QMessageBox.ButtonRole.ActionRole)
         db_button = msg_box.addButton(
-            "Load from Database", QMessageBox.ActionRole)
-        msg_box.addButton("Continue", QMessageBox.RejectRole)
+            "Load from Database", QMessageBox.ButtonRole.ActionRole)
+        msg_box.addButton("Continue", QMessageBox.ButtonRole.RejectRole)
 
         # Show the dialog and get the result
         msg_box.exec()
@@ -445,8 +497,6 @@ class NativeViewerUI(QMainWindow):
                 register_func_name = DEFAULT_REGISTER_NATIVE_NAME
 
             try:
-                # We already imported get_all_natives_from_ida at the top of the file
-                # The function will use the current global settings
                 raw_natives = get_all_natives_from_ida(
                     register_native_name=register_func_name)
             except Exception as e:
@@ -481,7 +531,7 @@ class NativeViewerUI(QMainWindow):
                     namespace = self.native_names_map[hash_str].get(
                         'namespace', '')
 
-                native_entry = {
+                native_entry: Dict[str, Any] = {
                     'hash': hash_val,
                     'hex_hash': f"0x{hash_val:016X}",
                     'addr': func_addr,
@@ -524,17 +574,18 @@ class NativeViewerUI(QMainWindow):
                 self.ida_load_status.setStyleSheet("color: green")
 
         except Exception as e:
-            print(f"Error loading natives: {str(e)}\n{traceback.format_exc()}")
+            print(f"Error loading natives: {str(e)}")
             error_msg = f"Error loading natives: {str(e)}"
             self.show_status_message(error_msg, error=True)
             if hasattr(self, 'ida_load_status'):
                 self.ida_load_status.setText(error_msg)
                 self.ida_load_status.setStyleSheet("color: red")
 
-    def show_status_message(self, message, error=False):
+    def show_status_message(self, message: str, error: bool = False) -> None:
         if error:
             self.status_bar.setStyleSheet("color: red; font-weight: bold;")
-            QMessageBox.critical(self, "Error", message)
+            QMessageBox.critical(
+                self, "Error", message, QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.NoButton)
         else:
             self.status_bar.setStyleSheet("color: green;")
 
@@ -577,7 +628,6 @@ class NativeViewerUI(QMainWindow):
 
         except Exception as e:
             print(f"Error loading native names: {str(e)}")
-            traceback.print_exc()
 
     def update_table(self):
         """Update the table with the current natives.
@@ -605,7 +655,7 @@ class NativeViewerUI(QMainWindow):
 
         self.natives_table.setSortingEnabled(True)
 
-    def insert_native_table_row(self, row, native):
+    def insert_native_table_row(self, row: int, native: Dict[str, Any]) -> None:
         hex_hash = native.get('hex_hash', '')
         hex_addr = native.get('hex_addr', '')
         name = native.get('name', '')
@@ -620,7 +670,7 @@ class NativeViewerUI(QMainWindow):
         view_button = QPushButton("View Function")
         view_button.setToolTip(f"View function at {hex_addr} in IDA Pro")
         view_button.clicked.connect(
-            lambda checked, addr=native['addr']: self.view_function(addr))
+            lambda checked=False, addr=native['addr']: self.view_function(int(addr)))
         self.natives_table.setCellWidget(row, 5, view_button)
 
     def _start_filter_timer(self):
@@ -634,7 +684,7 @@ class NativeViewerUI(QMainWindow):
         self.filter_timer.start(300)
 
     def filter_table(self):
-        """Filter the table based on search text using row hiding for better performance."""
+        """Filter the table based on search text and selected filter checkboxes using row hiding for better performance."""
         search_text = self.search_box.text().lower()
 
         # If search is empty, show all rows
@@ -645,24 +695,41 @@ class NativeViewerUI(QMainWindow):
             self.lastSearchText = search_text
             return
 
-        # Hide/show rows based on search instead of recreating table
+        # Get checkbox states
+        filter_hash = self.filter_hash_cb.isChecked()
+        filter_addr = self.filter_addr_cb.isChecked()
+        filter_name = self.filter_name_cb.isChecked()
+        filter_native_name = self.filter_native_name_cb.isChecked()
+        filter_namespace = self.filter_namespace_cb.isChecked()
+
+        # If no checkboxes are selected, hide all rows
+        if not any([filter_hash, filter_addr, filter_name, filter_native_name, filter_namespace]):
+            for row in range(self.natives_table.rowCount()):
+                self.natives_table.setRowHidden(row, True)
+            self.lastFilteredNatives = []
+            self.lastSearchText = search_text
+            return
+
+        # Hide/show rows based on search and checkbox selections
         visible_count = 0
-        filtered_natives = []
+        filtered_natives: List[Dict[str, Any]] = []
 
         for row in range(self.natives_table.rowCount()):
             if row < len(self.natives):
                 native = self.natives[row]
+                matches = False
 
-                # Use pre-computed search string if available
-                if 'search_string' in native:
-                    matches = search_text in native['search_string']
-                else:
-                    # Fallback to individual field search
-                    matches = (search_text in native['hex_hash'].lower() or
-                               search_text in native['hex_addr'].lower() or
-                               search_text in native['name'].lower() or
-                               search_text in native['namespace'].lower() or
-                               search_text in native['native_name'].lower())
+                # Check each field only if its checkbox is selected
+                if filter_hash and search_text in native.get('hex_hash', '').lower():
+                    matches = True
+                elif filter_addr and search_text in native.get('hex_addr', '').lower():
+                    matches = True
+                elif filter_name and search_text in native.get('name', '').lower():
+                    matches = True
+                elif filter_native_name and search_text in native.get('native_name', '').lower():
+                    matches = True
+                elif filter_namespace and search_text in native.get('namespace', '').lower():
+                    matches = True
 
                 if matches:
                     self.natives_table.setRowHidden(row, False)
@@ -690,7 +757,9 @@ class NativeViewerUI(QMainWindow):
                 QMessageBox.warning(
                     self,
                     "Invalid Input",
-                    "Offset values must be valid hexadecimal numbers (e.g., 0x8)"
+                    "Offset values must be valid hexadecimal numbers (e.g., 0x8)",
+                    QMessageBox.StandardButton.Ok,
+                    QMessageBox.StandardButton.NoButton
                 )
                 return
 
@@ -706,15 +775,12 @@ class NativeViewerUI(QMainWindow):
             self.settings.setValue("offset_to_hash", self.offset_to_hash)
             self.settings.setValue("offset_to_lea", self.offset_to_lea)
 
-            self.settings.sync()  # Ensure settings are written immediately
+            self.settings.sync()
 
-            # Show success message
             self.settings_status_label.setText(
                 "Settings saved successfully! Refresh to apply.")
             self.settings_status_label.setStyleSheet("color: green")
 
-            # Clear the status message after 3 seconds
-            from PyQt5.QtCore import QTimer
             QTimer.singleShot(
                 3000, lambda: self.settings_status_label.setText(""))
 
@@ -722,7 +788,9 @@ class NativeViewerUI(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Error",
-                f"An error occurred while saving settings: {str(e)}"
+                f"An error occurred while saving settings: {str(e)}",
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.StandardButton.NoButton
             )
 
     def load_settings(self):
@@ -755,11 +823,11 @@ class NativeViewerUI(QMainWindow):
                 self,
                 "Reset Settings",
                 "Are you sure you want to reset all settings to default values?",
-                QMessageBox.Yes | QMessageBox.No,
-                QMessageBox.No
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
             )
 
-            if reply == QMessageBox.Yes:
+            if reply == QMessageBox.StandardButton.Yes:
                 # Reset to defaults
                 self.register_native_name = DEFAULT_REGISTER_NATIVE_NAME
                 self.offset_to_hash = OFFSET_TO_HASH
@@ -781,7 +849,7 @@ class NativeViewerUI(QMainWindow):
                 self.settings_status_label.setStyleSheet("color: blue")
 
                 # Clear the status message after 3 seconds
-                from PyQt5.QtCore import QTimer
+
                 QTimer.singleShot(
                     3000, lambda: self.settings_status_label.setText(""))
 
@@ -789,7 +857,9 @@ class NativeViewerUI(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Error",
-                f"An error occurred while resetting settings: {str(e)}"
+                f"An error occurred while resetting settings: {str(e)}",
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.StandardButton.NoButton
             )
 
     def export_settings(self):
@@ -806,7 +876,7 @@ class NativeViewerUI(QMainWindow):
                 return  # User canceled
 
             # Create settings dictionary
-            settings_dict = {
+            settings_dict: Dict[str, Any] = {
                 "register_native_name": self.register_native_name,
                 "offset_to_hash": self.offset_to_hash,
                 "offset_to_lea": self.offset_to_lea,
@@ -821,8 +891,6 @@ class NativeViewerUI(QMainWindow):
                 f"Settings exported to {os.path.basename(file_path)}")
             self.settings_status_label.setStyleSheet("color: green")
 
-            # Clear the status message after 3 seconds
-            from PyQt5.QtCore import QTimer
             QTimer.singleShot(
                 3000, lambda: self.settings_status_label.setText(""))
 
@@ -830,7 +898,9 @@ class NativeViewerUI(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Error",
-                f"An error occurred while exporting settings: {str(e)}"
+                f"An error occurred while exporting settings: {str(e)}",
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.StandardButton.NoButton
             )
 
     def import_settings(self):
@@ -858,7 +928,9 @@ class NativeViewerUI(QMainWindow):
                     QMessageBox.warning(
                         self,
                         "Invalid Settings File",
-                        f"The settings file is missing the '{key}' setting."
+                        f"The settings file is missing the '{key}' setting.",
+                        QMessageBox.StandardButton.Ok,
+                        QMessageBox.StandardButton.NoButton
                     )
                     return
 
@@ -878,6 +950,7 @@ class NativeViewerUI(QMainWindow):
                 "register_native_name", self.register_native_name)
             self.settings.setValue("offset_to_hash", self.offset_to_hash)
             self.settings.setValue("offset_to_lea", self.offset_to_lea)
+
             self.settings.sync()
 
             # Show success message
@@ -886,7 +959,6 @@ class NativeViewerUI(QMainWindow):
             self.settings_status_label.setStyleSheet("color: green")
 
             # Clear the status message after 3 seconds
-            from PyQt5.QtCore import QTimer
             QTimer.singleShot(
                 3000, lambda: self.settings_status_label.setText(""))
 
@@ -894,16 +966,20 @@ class NativeViewerUI(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Error",
-                "The selected file is not a valid JSON file."
+                "The selected file is not a valid JSON file.",
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.StandardButton.NoButton
             )
         except Exception as e:
             QMessageBox.critical(
                 self,
                 "Error",
-                f"An error occurred while importing settings: {str(e)}"
+                f"An error occurred while importing settings: {str(e)}",
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.StandardButton.NoButton
             )
 
-    def view_function(self, addr):
+    def view_function(self, addr: int) -> None:
         try:
             # Try to use IDA's API if available
             try:
@@ -922,22 +998,24 @@ class NativeViewerUI(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Error",
-                f"An error occurred while trying to view the function: {str(e)}"
+                f"An error occurred while trying to view the function: {str(e)}",
+                QMessageBox.StandardButton.Ok,
+                QMessageBox.StandardButton.NoButton
             )
 
-    def browse_db_file(self):
+    def browse_db_file(self) -> None:
         """Browse for a database file using the NativeDB class."""
         self.DB.browse_db_file()
 
-    def save_natives_to_db(self):
+    def save_natives_to_db(self) -> None:
         """Save natives to SQLite database using the NativeDB class."""
         self.DB.save_natives_to_db(self.natives)
 
-    def load_natives_from_db(self):
+    def load_natives_from_db(self) -> None:
         """Load natives from SQLite database using the NativeDB class."""
         self.DB.load_natives_from_db()
 
-    def show_context_menu(self, position):
+    def show_context_menu(self, position: Any) -> None:
         """Show custom context menu for table items.
 
         Provides options to copy hash ID, address, function name, etc.
@@ -1075,11 +1153,11 @@ class NativeViewerUI(QMainWindow):
                     self,
                     "Function Found",
                     f"RegisterNative function found at {address_text}.\nDo you want to update your settings with this function name?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.Yes
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
                 )
 
-                if reply == QMessageBox.Yes:
+                if reply == QMessageBox.StandardButton.Yes:
                     # Update register native name in settings
                     self.register_native_name = reg_name
                     self.register_native_name_input.setText(reg_name)
@@ -1092,7 +1170,6 @@ class NativeViewerUI(QMainWindow):
                     self.settings_status_label.setStyleSheet("color: green")
 
                     # Clear the status message after 3 seconds
-                    from PyQt5.QtCore import QTimer
                     QTimer.singleShot(
                         3000, lambda: self.settings_status_label.setText(""))
 
@@ -1115,7 +1192,6 @@ class NativeViewerUI(QMainWindow):
             # Update the result label with the error
             self.find_reg_result.setText(f"Error: {str(e)}")
             self.find_reg_result.setStyleSheet("color: red;")
-            traceback.print_exc()
 
     def search_by_signature(self):
         """Search for RegisterNative function using a custom signature"""
@@ -1161,11 +1237,11 @@ class NativeViewerUI(QMainWindow):
                     self,
                     "Function Found",
                     f"RegisterNative function found at {address_text}.\nDo you want to view this function?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.Yes
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
                 )
 
-                if reply == QMessageBox.Yes:
+                if reply == QMessageBox.StandardButton.Yes:
                     # Try to view the function in IDA
                     try:
                         import importlib
@@ -1185,7 +1261,6 @@ class NativeViewerUI(QMainWindow):
         except Exception as e:
             self.find_reg_result.setText(f"Error: {str(e)}")
             self.find_reg_result.setStyleSheet("color: red;")
-            traceback.print_exc()
 
     def find_game_build(self):
         """Find the game build string"""
@@ -1212,7 +1287,6 @@ class NativeViewerUI(QMainWindow):
         except Exception as e:
             self.build_result.setText(f"Error finding game build: {str(e)}")
             self.build_result.setStyleSheet("color: red;")
-            traceback.print_exc()
 
 
 class NV_DB():
@@ -1222,15 +1296,15 @@ class NV_DB():
     in SQLite databases.
     """
 
-    def __init__(self, parent: NativeViewerUI):
+    def __init__(self, parent: 'NativeViewerUI'):
         """Initialize the database manager with a parent UI reference.
 
         Args:
             parent: Parent UI object with necessary UI components and settings
         """
-        self.parent = parent
+        self.parent: 'NativeViewerUI' = parent
 
-    def browse_db_file(self):
+    def browse_db_file(self) -> Optional[str]:
         """Open a file dialog to select a database file.
 
         Returns:
@@ -1242,8 +1316,8 @@ class NV_DB():
                 return None
 
             # Use a default path from settings or home directory
-            default_path = self.parent.settings.value(
-                "last_db_path", os.path.expanduser("~/RDR2_Natives.db"))
+            default_path = str(self.parent.settings.value(
+                "last_db_path", os.path.expanduser("~/RDR2_Natives.db")))
 
             file_path, _ = QFileDialog.getSaveFileName(
                 self.parent,
@@ -1265,13 +1339,13 @@ class NV_DB():
 
         except Exception as e:
             print(
-                f"Error in browse_db_file: {str(e)}\n{traceback.format_exc()}")
+                f"Error in browse_db_file: {str(e)}")
             if self.parent:
                 self.parent.show_status_message(
                     f"Error selecting database file: {str(e)}", error=True)
             return None
 
-    def save_natives_to_db(self, natives, db_path=None, register_native_name=None):
+    def save_natives_to_db(self, natives: List[Dict[str, Any]], db_path: Optional[str] = None, register_native_name: Optional[str] = None) -> bool:
         """Save natives to SQLite database.
 
         Args:
@@ -1292,7 +1366,9 @@ class NV_DB():
                     QMessageBox.warning(
                         self.parent,
                         "No Data",
-                        "No native functions to save. Please load natives first."
+                        "No native functions to save. Please load natives first.",
+                        QMessageBox.StandardButton.Ok,
+                        QMessageBox.StandardButton.NoButton
                     )
                 return False
 
@@ -1305,7 +1381,9 @@ class NV_DB():
                     QMessageBox.warning(
                         self.parent,
                         "No Database File",
-                        "Please specify a database file path."
+                        "Please specify a database file path.",
+                        QMessageBox.StandardButton.Ok,
+                        QMessageBox.StandardButton.NoButton
                     )
                 return False
 
@@ -1318,11 +1396,11 @@ class NV_DB():
                     self.parent,
                     "File Exists",
                     f"The file {os.path.basename(db_path)} already exists. Do you want to overwrite it?",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.No
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No
                 )
 
-                if reply == QMessageBox.No:
+                if reply == QMessageBox.StandardButton.No:
                     return False
 
             # Create progress dialog if we have a parent UI
@@ -1370,7 +1448,7 @@ class NV_DB():
 
             # Use provided register name or get from parent
             if register_native_name is None and self.parent:
-                register_native_name = self.parent.register_native_name
+                register_native_name = str(self.parent.register_native_name)
 
             if register_native_name:
                 cursor.execute("INSERT OR REPLACE INTO metadata VALUES (?, ?)",
@@ -1427,12 +1505,14 @@ class NV_DB():
                 QMessageBox.critical(
                     self.parent,
                     "Database Error",
-                    f"A database error occurred: {str(e)}"
+                    f"A database error occurred: {str(e)}",
+                    QMessageBox.StandardButton.Ok,
+                    QMessageBox.StandardButton.NoButton
                 )
                 self.parent.show_status_message(f"Error: {str(e)}")
 
             print(f"Database error: {str(e)}")
-            traceback.print_exc()
+
             return False
 
         except Exception as e:
@@ -1440,14 +1520,15 @@ class NV_DB():
                 QMessageBox.critical(
                     self.parent,
                     "Error",
-                    f"An error occurred: {str(e)}"
+                    f"An error occurred: {str(e)}",
+                    QMessageBox.StandardButton.Ok,
+                    QMessageBox.StandardButton.NoButton
                 )
                 self.parent.show_status_message(f"Error: {str(e)}")
 
-            traceback.print_exc()
             return False
 
-    def load_natives_from_db(self, db_path=None):
+    def load_natives_from_db(self, db_path: Optional[str] = None) -> Optional[List[Dict[str, Any]]]:
         """Load natives from SQLite database.
 
         Args:
@@ -1464,7 +1545,8 @@ class NV_DB():
 
                 if not db_path:
                     # Try to get last used path from settings
-                    db_path = self.parent.settings.value("last_db_path", "")
+                    db_path = str(
+                        self.parent.settings.value("last_db_path", ""))
                     if db_path:
                         self.parent.db_file_path.setText(db_path)
                     else:
@@ -1472,7 +1554,9 @@ class NV_DB():
                             QMessageBox.warning(
                                 self.parent,
                                 "No Database File",
-                                "Please specify a database file path."
+                                "Please specify a database file path.",
+                                QMessageBox.StandardButton.Ok,
+                                QMessageBox.StandardButton.NoButton
                             )
                         return None
 
@@ -1487,7 +1571,9 @@ class NV_DB():
                     QMessageBox.warning(
                         self.parent,
                         "File Not Found",
-                        f"The database file {db_path} does not exist."
+                        f"The database file {db_path} does not exist.",
+                        QMessageBox.StandardButton.Ok,
+                        QMessageBox.StandardButton.NoButton
                     )
                 return None
 
@@ -1503,7 +1589,9 @@ class NV_DB():
                     QMessageBox.warning(
                         self.parent,
                         "Invalid Database",
-                        "This database does not contain a natives table."
+                        "This database does not contain a natives table.",
+                        QMessageBox.StandardButton.Ok,
+                        QMessageBox.StandardButton.NoButton
                     )
                 conn.close()
                 return None
@@ -1527,11 +1615,11 @@ class NV_DB():
                     self.parent,
                     "Load Natives",
                     f"Load natives from {db_filename}?\n\nDatabase Information:\n{metadata_str}",
-                    QMessageBox.Yes | QMessageBox.No,
-                    QMessageBox.Yes
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.Yes
                 )
 
-                if reply == QMessageBox.No:
+                if reply == QMessageBox.StandardButton.No:
                     conn.close()
                     return None
 
@@ -1552,7 +1640,7 @@ class NV_DB():
             columns = {column_info[1] for column_info in cursor.fetchall()}
 
             # List to store loaded natives
-            natives = []
+            natives: List[Dict[str, Any]] = []
 
             # Check for extended schema with native_name and namespace
             has_extended_schema = 'native_name' in columns and 'namespace' in columns
@@ -1591,7 +1679,7 @@ class NV_DB():
                     '0x') else int(addr)
 
                 # Create native entry
-                native_entry = {
+                native_entry: Dict[str, Any] = {
                     'hash': int_hash,
                     'hex_hash': hash_val,
                     'addr': int_addr,
@@ -1644,7 +1732,7 @@ class NV_DB():
                     f"Search {len(natives)} loaded natives...")
 
                 # Store the current db path
-                self.parent.current_db_path = db_path
+                self.parent.current_db_path = str(db_path)
 
             return natives
 
@@ -1660,12 +1748,14 @@ class NV_DB():
                 QMessageBox.critical(
                     self.parent,
                     "Database Error",
-                    f"A database error occurred: {str(e)}"
+                    f"A database error occurred: {str(e)}",
+                    QMessageBox.StandardButton.Ok,
+                    QMessageBox.StandardButton.NoButton
                 )
                 self.parent.show_status_message(f"Error: {str(e)}")
 
             print(f"Database error: {str(e)}")
-            traceback.print_exc()
+
             return None
 
         except Exception as e:
@@ -1673,11 +1763,12 @@ class NV_DB():
                 QMessageBox.critical(
                     self.parent,
                     "Error",
-                    f"An error occurred: {str(e)}"
+                    f"An error occurred: {str(e)}",
+                    QMessageBox.StandardButton.Ok,
+                    QMessageBox.StandardButton.NoButton
                 )
                 self.parent.show_status_message(f"Error: {str(e)}")
 
-            traceback.print_exc()
             return None
 
 
@@ -1693,20 +1784,25 @@ def run():
     print("------------------")
 
     try:
-        if QApplication.instance() is not None:
-            app = QApplication.instance()
-        else:
+        window = None
+        app = QApplication.instance()
+        if app is None:
             app = QApplication([])
 
-        window = NativeViewerUI(app.clipboard())  # type: ignore
-        window.show()
+        # Ensure we have a QApplication instance, not just QCoreApplication
+        if isinstance(app, QApplication):
+            window = NativeViewerUI(app.clipboard())
+            window.show()
 
-        window.activateWindow()
-        window.raise_()
+            window.activateWindow()
+            window.raise_()
 
-        app.exec()
+            app.exec()
 
-        _native_viewer_window = window  # Keep a global reference
+            _native_viewer_window = window  # Keep a global reference
+        else:
+            print("Error: Could not get QApplication instance")
+            return None
 
         return _native_viewer_window
     except Exception as e:
