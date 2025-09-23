@@ -1,14 +1,3 @@
-"""
-RDR2 Native Viewer - A comprehensive tool for analyzing Red Dead Redemption 2 native functions.
-
-This module provides a Qt-based GUI for loading, viewing, and managing RDR2 native functions
-from IDA Pro databases and SQLite files. Features include advanced filtering, native name
-resolution, and RegisterNative discovery.
-
-Author: RDR2Tools
-License: MIT (see LICENSE file)
-"""
-
 from typing import Optional, List, Dict, Any, Callable
 import os
 import json
@@ -59,12 +48,6 @@ DEFAULT_NATIVES_JSON = "rdr3natives.json"
 APP_NAME = "RDR2 Native Viewer"
 APP_ORGANIZATION = "RDR2Tools"
 APP_DOMAIN = "NativeViewer"
-
-# GitHub Repository Information
-GITHUB_REPO_OWNER = "VORPCORE"
-GITHUB_REPO_NAME = "RDR3natives"
-GITHUB_FILE_PATH = "rdr3natives.json"
-GITHUB_BRANCH = "main"
 
 # UI Constants
 WINDOW_WIDTH = 1000
@@ -653,12 +636,6 @@ class NativeViewerUI(QMainWindow):
         misc_tab = QWidget()
         layout = QVBoxLayout(misc_tab)
         self.tab_widget.addTab(misc_tab, "Misc")
-        layout.addWidget(QLabel("<b>Credits & Information:</b>"))
-        credits_text = QLabel(
-            "RDR2 Native Viewer - IDA Pro plugin for RDR2 native functions. Features: Load from IDA Pro, SQLite database, Advanced filtering, Native name resolution, RegisterNative discovery. Data: VORPCORE/RDR3natives.")
-        credits_text.setMaximumHeight(200)
-        credits_text.setWordWrap(True)
-        layout.addWidget(credits_text)
         layout.addWidget(UIHelpers.create_separator())
         layout.addWidget(QLabel("<b>Community & Support:</b>"))
         discord_layout = QHBoxLayout()
