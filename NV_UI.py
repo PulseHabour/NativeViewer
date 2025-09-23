@@ -1,5 +1,5 @@
 from idaapi import require  # noqa
-require('NV-Utils')  # noqa
+require('NV_Utils')  # noqa
 
 from NV_Utils import OFFSET_TO_HASH, OFFSET_TO_LEA, FindGameBuild, FindRegisterNative, get_all_natives_from_ida  # noqa
 
@@ -217,6 +217,51 @@ class NativeViewerUI(QMainWindow):
         self.settings_status_label = QLabel("")
         layout.addWidget(self.settings_status_label)
 
+        separator3 = QFrame()
+        separator3.setFrameShape(QFrame.HLine)
+        separator3.setFrameShadow(QFrame.Sunken)
+        layout.addWidget(separator3)
+
+        # SQLite Database section
+        sqlite_label = QLabel("<b>SQLite Database Operations:</b>")
+        sqlite_label.setToolTip(
+            "Save and load native functions to/from a SQLite database")
+        layout.addWidget(sqlite_label)
+
+        # Save natives to database
+        save_db_layout = QHBoxLayout()
+        save_db_layout.addWidget(QLabel("Database File:"))
+        self.db_file_path = QLineEdit()
+        self.db_file_path.setPlaceholderText("Path to SQLite database file")
+        save_db_layout.addWidget(self.db_file_path)
+
+        browse_button = QPushButton("Browse")
+        browse_button.clicked.connect(self.browse_db_file)
+        save_db_layout.addWidget(browse_button)
+
+        layout.addLayout(save_db_layout)
+
+        # Buttons for database operations
+        db_buttons_layout = QHBoxLayout()
+
+        save_natives_button = QPushButton("Save Natives to DB")
+        save_natives_button.clicked.connect(self.save_natives_to_db)
+        save_natives_button.setToolTip(
+            "Save currently loaded native functions to the specified database file")
+        db_buttons_layout.addWidget(save_natives_button)
+
+        load_natives_button = QPushButton("Load Natives from DB")
+        load_natives_button.clicked.connect(self.load_natives_from_db)
+        load_natives_button.setToolTip(
+            "Load native functions from the specified database file")
+        db_buttons_layout.addWidget(load_natives_button)
+
+        layout.addLayout(db_buttons_layout)
+
+        # Database operation status
+        self.db_status_label = QLabel("")
+        layout.addWidget(self.db_status_label)
+
         layout.addStretch(1)
 
     def _setup_tools_tab(self):
@@ -316,52 +361,6 @@ class NativeViewerUI(QMainWindow):
         self.natives_json_status = QLabel("")
         layout.addWidget(self.natives_json_status)
 
-        # Separator
-        separator3 = QFrame()
-        separator3.setFrameShape(QFrame.HLine)
-        separator3.setFrameShadow(QFrame.Sunken)
-        layout.addWidget(separator3)
-
-        # SQLite Database section
-        sqlite_label = QLabel("<b>SQLite Database Operations:</b>")
-        sqlite_label.setToolTip(
-            "Save and load native functions to/from a SQLite database")
-        layout.addWidget(sqlite_label)
-
-        # Save natives to database
-        save_db_layout = QHBoxLayout()
-        save_db_layout.addWidget(QLabel("Database File:"))
-        self.db_file_path = QLineEdit()
-        self.db_file_path.setPlaceholderText("Path to SQLite database file")
-        save_db_layout.addWidget(self.db_file_path)
-
-        browse_button = QPushButton("Browse")
-        browse_button.clicked.connect(self.browse_db_file)
-        save_db_layout.addWidget(browse_button)
-
-        layout.addLayout(save_db_layout)
-
-        # Buttons for database operations
-        db_buttons_layout = QHBoxLayout()
-
-        save_natives_button = QPushButton("Save Natives to DB")
-        save_natives_button.clicked.connect(self.save_natives_to_db)
-        save_natives_button.setToolTip(
-            "Save currently loaded native functions to the specified database file")
-        db_buttons_layout.addWidget(save_natives_button)
-
-        load_natives_button = QPushButton("Load Natives from DB")
-        load_natives_button.clicked.connect(self.load_natives_from_db)
-        load_natives_button.setToolTip(
-            "Load native functions from the specified database file")
-        db_buttons_layout.addWidget(load_natives_button)
-
-        layout.addLayout(db_buttons_layout)
-
-        # Database operation status
-        self.db_status_label = QLabel("")
-        layout.addWidget(self.db_status_label)
-
         # Add spacer to push everything to the top
         layout.addStretch(1)
 
@@ -379,7 +378,7 @@ class NativeViewerUI(QMainWindow):
         msg_box.addButton("Continue", QMessageBox.RejectRole)
 
         # Show the dialog and get the result
-        msg_box.exec_()
+        msg_box.exec()
 
         # Handle the clicked button
         clicked_button = msg_box.clickedButton()
@@ -883,7 +882,7 @@ class NativeViewerUI(QMainWindow):
         copy_all_action = context_menu.addAction("Copy All Data")
 
         cursor_pos = QCursor.pos()
-        action = context_menu.exec_(cursor_pos)
+        action = context_menu.exec(cursor_pos)
 
         if not action:
             return  # No action selected
@@ -1616,7 +1615,10 @@ def run():
     print("------------------")
 
     try:
-        app = QApplication([])
+        if QApplication.instance() is not None:
+            app = QApplication.instance()
+        else:
+            app = QApplication([])
 
         window = NativeViewerUI(app.clipboard())  # type: ignore
         window.show()
@@ -1624,7 +1626,7 @@ def run():
         window.activateWindow()
         window.raise_()
 
-        app.exec_()
+        app.exec()
 
         _native_viewer_window = window  # Keep a global reference
 
