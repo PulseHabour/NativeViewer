@@ -1,5 +1,9 @@
-import base64
-import requests
+from idaapi import require  # noqa
+require('NV-Utils')  # noqa
+
+from NV_Utils import OFFSET_TO_HASH, OFFSET_TO_LEA, FindGameBuild, FindRegisterNative, get_all_natives_from_ida  # noqa
+
+
 import os
 import sys
 import json
@@ -29,15 +33,12 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QSettings, Qt, QTimer
 from PyQt5.QtGui import QCursor
 
-from idaapi import require
-require('NV-Utils')
-
 
 DEFAULT_REGISTER_NATIVE_NAME = "RegisterNative"
 DEFAULT_DATABASE_NAME = "RDR2_Natives.db"
 DEFAULT_NATIVES_JSON = "rdr3natives.json"
+
 APP_NAME = "RDR2 Native Viewer"
-APP_VERSION = "1.1.0"
 APP_ORGANIZATION = "RDR2Tools"
 APP_DOMAIN = "NativeViewer"
 
@@ -46,21 +47,10 @@ GITHUB_REPO_OWNER = "VORPCORE"
 GITHUB_REPO_NAME = "RDR3natives"
 GITHUB_FILE_PATH = "rdr3natives.json"
 GITHUB_BRANCH = "main"
-try:
-    from native_utils import OFFSET_TO_HASH, OFFSET_TO_LEA, get_all_natives_from_ida
-    IDA_AVAILABLE = True
-except ImportError:
-    OFFSET_TO_HASH = 0x8
-    OFFSET_TO_LEA = 0x11
-    IDA_AVAILABLE = False
 
-    # Define stub function
-    def get_all_natives_from_ida(register_native_name) -> list[tuple[int, int, str]] | None:
-        return []
 
 WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 700
-STATUS_MESSAGE_TIMEOUT = 3000
 
 
 class NativeViewerUI(QMainWindow):
@@ -83,7 +73,7 @@ class NativeViewerUI(QMainWindow):
         self.filter_timer.timeout.connect(self._perform_filter)
 
         # Initialize database manager with parent reference
-        self.DB = NativeDB(self)
+        self.DB = NV_DB(self)
 
         self.setWindowTitle(APP_NAME)
         self.setGeometry(100, 100, WINDOW_WIDTH, WINDOW_HEIGHT)
@@ -559,7 +549,7 @@ class NativeViewerUI(QMainWindow):
 
     def _start_filter_timer(self):
         """Start or restart the debounce timer for filtering.
-        
+
         This method is called on every text change and restarts the timer
         to delay the actual filtering until the user stops typing.
         """
@@ -570,7 +560,7 @@ class NativeViewerUI(QMainWindow):
 
     def _perform_filter(self):
         """Perform the actual filtering after the debounce delay.
-        
+
         This is the method that actually executes the filter logic
         after the user has stopped typing for the debounce period.
         """
@@ -601,10 +591,6 @@ class NativeViewerUI(QMainWindow):
                 search_text in native['name'].lower() or
                     search_text in native_name):
                 filtered_natives.append(native)
-
-        # Show search results count in status bar
-        self.show_status_message(
-            f"Found {len(filtered_natives)} matching native(s) out of {len(self.natives)}")
 
         self.natives_table.setSortingEnabled(False)
         self.natives_table.setRowCount(len(filtered_natives))
@@ -892,7 +878,8 @@ class NativeViewerUI(QMainWindow):
         copy_addr_action = context_menu.addAction("Copy Address")
         copy_func_name_action = context_menu.addAction("Copy Function Name")
         copy_native_name_action = context_menu.addAction("Copy Native Name")
-        copy_native_namespace_action = context_menu.addAction("Copy Native Namespace")
+        copy_native_namespace_action = context_menu.addAction(
+            "Copy Native Namespace")
         copy_all_action = context_menu.addAction("Copy All Data")
 
         cursor_pos = QCursor.pos()
@@ -938,9 +925,11 @@ class NativeViewerUI(QMainWindow):
         elif action == copy_native_namespace_action:
             if native_namespace:
                 self.clipboard.setText(native_namespace)
-                self.show_status_message(f"Copied native namespace: {native_namespace}")
+                self.show_status_message(
+                    f"Copied native namespace: {native_namespace}")
             else:
-                self.show_status_message("Native namespace is empty", error=True)
+                self.show_status_message(
+                    "Native namespace is empty", error=True)
 
         elif action == copy_all_action:
             all_data = f"Hash: {hash_value}\nAddress: {addr}\nFunction Name: {func_name}\nNative Name: {native_name or '<None>'}\nNative Namespace: {native_namespace or '<None>'}"
@@ -966,9 +955,6 @@ class NativeViewerUI(QMainWindow):
             if not reg_name:
                 reg_name = DEFAULT_REGISTER_NATIVE_NAME
                 self.find_reg_name_input.setText(reg_name)
-
-            # Import FindRegisterNative only when needed
-            from native_utils import FindRegisterNative
 
             # Call the FindRegisterNative function
             try:
@@ -1064,9 +1050,6 @@ class NativeViewerUI(QMainWindow):
                 self.find_reg_result.setStyleSheet("color: red;")
                 return
 
-            # Import FindRegisterNative only when needed
-            from native_utils import FindRegisterNative
-
             # Call FindRegisterNative with the custom signature
             try:
                 reg_address = FindRegisterNative(signature)
@@ -1130,10 +1113,7 @@ class NativeViewerUI(QMainWindow):
     def find_game_build(self):
         """Find the game build string"""
         try:
-            # Import FindGameBuild only when needed
-            from native_utils import FindGameBuild
 
-            # Call the FindGameBuild function
             build = FindGameBuild()
 
             if build:
@@ -1158,7 +1138,7 @@ class NativeViewerUI(QMainWindow):
             traceback.print_exc()
 
 
-class NativeDB():
+class NV_DB():
     """Database management class for native functions.
 
     This class handles saving, loading, and managing native function data
@@ -1624,37 +1604,6 @@ class NativeDB():
             return None
 
 
-def show_ui():
-    """Show the UI window"""
-    try:
-        # Create QApplication instance or use existing one (for IDA Pro)
-        app = QApplication.instance()
-        if app is None:
-            app = QApplication([])
-            need_exec = True
-        else:
-            need_exec = False
-
-        # Create and show window
-
-        window = NativeViewerUI(app.clipboard())  # type: ignore
-        window.show()
-
-        # Make sure window appears in foreground
-        window.activateWindow()
-        window.raise_()
-
-        # Run event loop if needed
-        if need_exec:
-            app.exec_()
-
-        return window
-    except Exception as e:
-        print(f"Error showing UI: {str(e)}")
-        traceback.print_exc()
-        return None
-
-
 # Global reference to prevent garbage collection
 _native_viewer_window = None
 
@@ -1667,14 +1616,23 @@ def run():
     print("------------------")
 
     try:
-        _native_viewer_window = show_ui()
+        app = QApplication([])
+
+        window = NativeViewerUI(app.clipboard())  # type: ignore
+        window.show()
+
+        window.activateWindow()
+        window.raise_()
+
+        app.exec_()
+
+        _native_viewer_window = window  # Keep a global reference
+
         return _native_viewer_window
     except Exception as e:
         print(f"Error running UI: {str(e)}")
-        traceback.print_exc()
         return None
 
 
 if __name__ == "__main__":
-    require('native_utils')
     run()
