@@ -20,9 +20,8 @@ The project has been organized into separate modules for better maintainability:
 
 ## Dependencies
 
-- IDA Pro with Python support
-- ida_domain module
-- PyQt5
+- IDA Pro 9.2 (needs to support PySide6)
+- IDA Domain (pip install ida_domain)
 
 ## Planned
 
