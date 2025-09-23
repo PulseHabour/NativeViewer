@@ -641,7 +641,7 @@ class NativeViewerUI(QMainWindow):
         discord_layout = QHBoxLayout()
         discord_layout.addWidget(QLabel("Join our Discord community:"))
         discord_button = UIHelpers.create_button(
-            "Join Discord Server", self.copy_discord_invite)
+            "Join Discord Server", self.open_discord_invite)
         discord_layout.addWidget(discord_button)
         layout.addLayout(discord_layout)
         discord_info = QLabel(f"Discord Invite: {DISCORD_INVITE_CODE}")
@@ -649,17 +649,8 @@ class NativeViewerUI(QMainWindow):
         layout.addWidget(discord_info)
         layout.addStretch(1)
 
-    def copy_discord_invite(self) -> None:
-        """
-        Copy Discord invite link to clipboard.
-
-        This method copies the full Discord invite URL to the system clipboard
-        and shows a confirmation message to the user.
-        """
+    def open_discord_invite(self) -> None:
         full_invite = f"https://discord.gg/{DISCORD_INVITE_CODE}"
-        self.clipboard.setText(full_invite)
-        self.show_status_message(
-            f"Discord invite copied to clipboard: {full_invite}")
 
         # get os type
         if os.name == 'nt':  # Windows
@@ -668,12 +659,6 @@ class NativeViewerUI(QMainWindow):
             os.system(f'open {full_invite}')
 
     def prompt_load_natives(self) -> None:
-        """
-        Show initial dialog to prompt user for loading natives.
-
-        This method presents the user with options to load natives from
-        either IDA Pro or a SQLite database when the application starts.
-        """
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Load Natives")
         msg_box.setText("Would you like to load natives?")
@@ -695,24 +680,15 @@ class NativeViewerUI(QMainWindow):
             self.database.load_natives_from_db()
 
     def load_natives_from_ida(self) -> None:
-        """
-        Load native functions from IDA Pro database.
 
-        This method extracts native function information from the current IDA Pro
-        session using the configured RegisterNative function.
-        """
-        # Clear existing data
         self._clear_natives_data()
 
-        # Get register function name
         register_func_name = self._get_register_function_name()
 
-        # Update status
         self._update_ida_load_status("Loading natives from IDA...", "blue")
         self.show_status_message("Loading natives from IDA...")
 
         try:
-            # Extract natives from IDA
             raw_natives = get_all_natives_from_ida(
                 register_native_name=register_func_name)
 
@@ -724,10 +700,8 @@ class NativeViewerUI(QMainWindow):
                 self._handle_ida_load_error(error_msg)
                 return
 
-            # Process and store the natives
             self._process_raw_natives(raw_natives)
 
-            # Update UI
             self._finalize_ida_load_success(len(self.natives))
 
         except Exception as e:
@@ -765,7 +739,6 @@ class NativeViewerUI(QMainWindow):
         for hash_val, func_addr, func_name in raw_natives:
             hash_str = f"{hash_val:016X}"
 
-            # Look up native name and namespace
             native_name = ""
             namespace = ""
             if hash_str in self.native_names_map:
@@ -773,7 +746,6 @@ class NativeViewerUI(QMainWindow):
                 native_name = native_info.get('name', '')
                 namespace = native_info.get('namespace', '')
 
-            # Create native entry
             native_entry: Dict[str, Any] = {
                 'hash': hash_val,
                 'hex_hash': f"0x{hash_val:016X}",
@@ -784,7 +756,6 @@ class NativeViewerUI(QMainWindow):
                 'namespace': namespace
             }
 
-            # Generate search string
             native_entry['search_string'] = self._generate_search_string(
                 native_entry)
             self.natives.append(native_entry)
@@ -793,12 +764,10 @@ class NativeViewerUI(QMainWindow):
         """Finalize successful IDA load operation."""
         self.update_table()
 
-        # Update UI labels with count display
         self.update_natives_count_display(count, count)
 
         self.search_box.setPlaceholderText(f"Search {count} loaded natives...")
 
-        # Show success message
         success_msg = f"Successfully loaded {count} native functions."
         self.show_status_message(success_msg)
         self._update_ida_load_status(success_msg, "green")
@@ -809,13 +778,6 @@ class NativeViewerUI(QMainWindow):
         self._update_ida_load_status(error_msg, "red")
 
     def show_status_message(self, message: str, error: bool = False) -> None:
-        """
-        Display a status message in the status bar and optionally show an error dialog.
-
-        Args:
-            message: The message to display
-            error: Whether this is an error message (shows dialog and changes styling)
-        """
         if error:
             self.status_bar.setStyleSheet("color: red; font-weight: bold;")
             QMessageBox.critical(
@@ -830,12 +792,7 @@ class NativeViewerUI(QMainWindow):
         self.status_bar.showMessage(message)
 
     def load_native_names(self) -> None:
-        """
-        Load native function names and namespaces from RDR3natives.json.
 
-        This method loads the native function name mappings from the JSON file
-        to provide human-readable names for hash values.
-        """
         try:
             json_path = os.path.join(
                 os.path.dirname(os.path.abspath(__file__)),
