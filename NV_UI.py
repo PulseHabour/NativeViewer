@@ -93,7 +93,6 @@ class NativeViewerUI(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
-
         self.tab_widget = QTabWidget()
         main_layout.addWidget(self.tab_widget)
         self._setup_natives_tab()
@@ -139,6 +138,8 @@ class NativeViewerUI(QMainWindow):
             Qt.ContextMenuPolicy.CustomContextMenu)
         self.natives_table.customContextMenuRequested.connect(
             self.show_context_menu)
+
+        self.natives_table.verticalHeader().setVisible(False)
 
         # Configure table headers
         header = self.natives_table.horizontalHeader()
@@ -489,7 +490,7 @@ class NativeViewerUI(QMainWindow):
                     'native_name': native_name,
                     'namespace': namespace
                 }
-                
+
                 # Pre-compute search string for faster filtering
                 native_entry['search_string'] = (
                     native_entry['hex_hash'].lower() + ' ' +
@@ -498,7 +499,7 @@ class NativeViewerUI(QMainWindow):
                     native_entry['native_name'].lower() + ' ' +
                     native_entry['namespace'].lower()
                 )
-                
+
                 self.natives.append(native_entry)
 
             # Populate table
@@ -634,7 +635,6 @@ class NativeViewerUI(QMainWindow):
 
     def filter_table(self):
         """Filter the table based on search text using row hiding for better performance."""
-        start = datetime.datetime.now()
         search_text = self.search_box.text().lower()
 
         # If search is empty, show all rows
@@ -648,25 +648,22 @@ class NativeViewerUI(QMainWindow):
         # Hide/show rows based on search instead of recreating table
         visible_count = 0
         filtered_natives = []
-        
-        # Disable updates during bulk operations for better performance
-        self.natives_table.setUpdatesEnabled(False)
-        
+
         for row in range(self.natives_table.rowCount()):
             if row < len(self.natives):
                 native = self.natives[row]
-                
+
                 # Use pre-computed search string if available
                 if 'search_string' in native:
                     matches = search_text in native['search_string']
                 else:
                     # Fallback to individual field search
                     matches = (search_text in native['hex_hash'].lower() or
-                             search_text in native['hex_addr'].lower() or
-                             search_text in native['name'].lower() or
-                             search_text in native['namespace'].lower() or
-                             search_text in native['native_name'].lower())
-                
+                               search_text in native['hex_addr'].lower() or
+                               search_text in native['name'].lower() or
+                               search_text in native['namespace'].lower() or
+                               search_text in native['native_name'].lower())
+
                 if matches:
                     self.natives_table.setRowHidden(row, False)
                     filtered_natives.append(native)
@@ -676,15 +673,9 @@ class NativeViewerUI(QMainWindow):
             else:
                 # Hide any extra rows
                 self.natives_table.setRowHidden(row, True)
-        
-        # Re-enable updates
-        self.natives_table.setUpdatesEnabled(True)
 
         self.lastFilteredNatives = filtered_natives
         self.lastSearchText = search_text
-
-        end = datetime.datetime.now()
-        print(f"Filter took {(end - start).total_seconds()} seconds, showing {visible_count} items")
 
     def save_settings(self):
         try:
@@ -1609,7 +1600,7 @@ class NV_DB():
                     'native_name': native_name,
                     'namespace': namespace
                 }
-                
+
                 # Pre-compute search string for faster filtering
                 native_entry['search_string'] = (
                     native_entry['hex_hash'].lower() + ' ' +
@@ -1618,7 +1609,7 @@ class NV_DB():
                     native_entry['native_name'].lower() + ' ' +
                     native_entry['namespace'].lower()
                 )
-                
+
                 natives.append(native_entry)
 
                 # Update progress if UI parent exists
