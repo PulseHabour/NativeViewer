@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Callable
 from idaapi import require  # noqa
 require('NV_Utils')  # noqa
 from NV_Utils import OFFSET_TO_HASH, OFFSET_TO_LEA, FindGameBuild, FindRegisterNative, get_all_natives_from_ida  # noqa
@@ -44,6 +44,64 @@ GITHUB_FILE_PATH = "rdr3natives.json"
 GITHUB_BRANCH = "main"
 WINDOW_WIDTH = 1000
 WINDOW_HEIGHT = 700
+
+
+class UIHelpers:
+    @staticmethod
+    def section_label(text: str, tooltip: Optional[str] = None) -> QLabel:
+        lbl = QLabel(text)
+        if tooltip:
+            lbl.setToolTip(tooltip)
+        return lbl
+
+    @staticmethod
+    def separator() -> QFrame:
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setFrameShadow(QFrame.Shadow.Sunken)
+        return line
+
+    @staticmethod
+    def button(text: str, on_click: Callable[[], object], tooltip: Optional[str] = None) -> QPushButton:
+        btn = QPushButton(text)
+        if tooltip:
+            btn.setToolTip(tooltip)
+        btn.clicked.connect(lambda checked=False: on_click())
+        return btn
+
+    @staticmethod
+    def ask_yes_no(parent: QWidget, title: str, text: str, *, default_yes: bool = True) -> bool:
+        default = QMessageBox.StandardButton.Yes if default_yes else QMessageBox.StandardButton.No
+        reply = QMessageBox.question(
+            parent,
+            title,
+            text,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            default,
+        )
+        return reply == QMessageBox.StandardButton.Yes
+
+    @staticmethod
+    def info(parent: QWidget, title: str, text: str) -> None:
+        QMessageBox.information(
+            parent, title, text, QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.NoButton)
+
+    @staticmethod
+    def warn(parent: QWidget, title: str, text: str) -> None:
+        QMessageBox.warning(
+            parent, title, text, QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.NoButton)
+
+    @staticmethod
+    def error(parent: QWidget, title: str, text: str) -> None:
+        QMessageBox.critical(
+            parent, title, text, QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.NoButton)
+
+    @staticmethod
+    def progress(parent: QWidget, title: str, label_text: str, maximum: int) -> QProgressDialog:
+        dlg = QProgressDialog(label_text, "Cancel", 0, maximum, parent)
+        dlg.setWindowTitle(title)
+        dlg.setValue(0)
+        return dlg
 
 
 class NativeViewerUI(QMainWindow):
@@ -186,18 +244,16 @@ class NativeViewerUI(QMainWindow):
         settings_tab = QWidget()
         layout = QVBoxLayout(settings_tab)
         self.tab_widget.addTab(settings_tab, "Settings")
-        layout.addWidget(QLabel("<b>Function Location Settings:</b>"))
+        layout.addWidget(UIHelpers.section_label(
+            "<b>Function Location Settings:</b>"))
         reg_name_layout = QHBoxLayout()
         reg_name_layout.addWidget(QLabel("RegisterNative Function Name:"))
         self.register_native_name_input = QLineEdit()
         self.register_native_name_input.setText(str(self.register_native_name))
         reg_name_layout.addWidget(self.register_native_name_input)
         layout.addLayout(reg_name_layout)
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(separator)
-        layout.addWidget(QLabel("<b>Offset Settings:</b>"))
+        layout.addWidget(UIHelpers.separator())
+        layout.addWidget(UIHelpers.section_label("<b>Offset Settings:</b>"))
         hash_offset_layout = QHBoxLayout()
         hash_offset_layout.addWidget(QLabel("Offset to Hash:"))
         self.hash_offset_input = QLineEdit(f"0x{self.offset_to_hash:X}")
@@ -211,20 +267,20 @@ class NativeViewerUI(QMainWindow):
 
         buttons_layout = QHBoxLayout()
 
-        save_settings_button = QPushButton("Save Settings")
-        save_settings_button.clicked.connect(self.save_settings)
+        save_settings_button = UIHelpers.button(
+            "Save Settings", self.save_settings)
         buttons_layout.addWidget(save_settings_button)
 
-        reset_settings_button = QPushButton("Reset to Defaults")
-        reset_settings_button.clicked.connect(self.reset_settings)
+        reset_settings_button = UIHelpers.button(
+            "Reset to Defaults", self.reset_settings)
         buttons_layout.addWidget(reset_settings_button)
 
         layout.addLayout(buttons_layout)
 
         io_buttons_layout = QHBoxLayout()
 
-        import_settings_button = QPushButton("Import Settings")
-        import_settings_button.clicked.connect(self.import_settings)
+        import_settings_button = UIHelpers.button(
+            "Import Settings", self.import_settings)
         io_buttons_layout.addWidget(import_settings_button)
 
         layout.addLayout(io_buttons_layout)
@@ -232,12 +288,10 @@ class NativeViewerUI(QMainWindow):
         self.settings_status_label = QLabel("")
         layout.addWidget(self.settings_status_label)
 
-        separator3 = QFrame()
-        separator3.setFrameShape(QFrame.Shape.HLine)
-        separator3.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(separator3)
+        layout.addWidget(UIHelpers.separator())
 
-        sqlite_label = QLabel("<b>SQLite Database Operations:</b>")
+        sqlite_label = UIHelpers.section_label(
+            "<b>SQLite Database Operations:</b>")
         sqlite_label.setToolTip(
             "Save and load native functions to/from a SQLite database")
         layout.addWidget(sqlite_label)
@@ -248,24 +302,21 @@ class NativeViewerUI(QMainWindow):
         self.db_file_path.setPlaceholderText("Path to SQLite database file")
         save_db_layout.addWidget(self.db_file_path)
 
-        browse_button = QPushButton("Browse")
-        browse_button.clicked.connect(self.DB.browse_db_file)
+        browse_button = UIHelpers.button("Browse", self.DB.browse_db_file)
         save_db_layout.addWidget(browse_button)
 
         layout.addLayout(save_db_layout)
 
         db_buttons_layout = QHBoxLayout()
 
-        save_natives_button = QPushButton("Save Natives to DB")
-        save_natives_button.clicked.connect(
-            lambda: self.DB.save_natives_to_db(self.natives))
+        save_natives_button = UIHelpers.button(
+            "Save Natives to DB", lambda: self.DB.save_natives_to_db(self.natives))
         save_natives_button.setToolTip(
             "Save currently loaded native functions to the specified database file")
         db_buttons_layout.addWidget(save_natives_button)
 
-        load_natives_button = QPushButton("Load Natives from DB")
-        load_natives_button.clicked.connect(
-            lambda: self.DB.load_natives_from_db())
+        load_natives_button = UIHelpers.button(
+            "Load Natives from DB", lambda: self.DB.load_natives_from_db())
         load_natives_button.setToolTip(
             "Load native functions from the specified database file")
         db_buttons_layout.addWidget(load_natives_button)
@@ -280,7 +331,8 @@ class NativeViewerUI(QMainWindow):
         layout = QVBoxLayout(tools_tab)
         self.tab_widget.addTab(tools_tab, "Tools")
 
-        load_ida_label = QLabel("<b>Load Natives from IDA:</b>")
+        load_ida_label = UIHelpers.section_label(
+            "<b>Load Natives from IDA:</b>")
         load_ida_label.setToolTip(
             "Extract native function information directly from IDA Pro")
         layout.addWidget(load_ida_label)
@@ -293,8 +345,8 @@ class NativeViewerUI(QMainWindow):
             "Name of the RegisterNative function to use for extraction")
         load_ida_layout.addWidget(self.ida_register_name_input)
 
-        load_ida_button = QPushButton("Load Natives from IDA")
-        load_ida_button.clicked.connect(self.load_natives_from_ida)
+        load_ida_button = UIHelpers.button(
+            "Load Natives from IDA", self.load_natives_from_ida)
         load_ida_button.setToolTip(
             "Scan IDA Pro for native functions using the specified RegisterNative function")
         load_ida_layout.addWidget(load_ida_button)
@@ -304,12 +356,10 @@ class NativeViewerUI(QMainWindow):
         self.ida_load_status = QLabel("")
         layout.addWidget(self.ida_load_status)
 
-        separator_ida = QFrame()
-        separator_ida.setFrameShape(QFrame.Shape.HLine)
-        separator_ida.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(separator_ida)
+        layout.addWidget(UIHelpers.separator())
 
-        find_reg_label = QLabel("<b>Find RegisterNative Function:</b>")
+        find_reg_label = UIHelpers.section_label(
+            "<b>Find RegisterNative Function:</b>")
         find_reg_label.setToolTip(
             "Find the function that registers native functions in the IDA")
         layout.addWidget(find_reg_label)
@@ -320,8 +370,8 @@ class NativeViewerUI(QMainWindow):
         self.find_reg_name_input.setText(str(self.register_native_name))
         find_reg_layout.addWidget(self.find_reg_name_input)
 
-        find_reg_button = QPushButton("Find RegisterNative")
-        find_reg_button.clicked.connect(self.find_register_native)
+        find_reg_button = UIHelpers.button(
+            "Find RegisterNative", self.find_register_native)
         find_reg_layout.addWidget(find_reg_button)
 
         layout.addLayout(find_reg_layout)
@@ -334,8 +384,8 @@ class NativeViewerUI(QMainWindow):
             "Assembly signature pattern to search for in the IDA")
         sig_layout.addWidget(self.reg_signature_input)
 
-        sig_search_button = QPushButton("Search by Signature")
-        sig_search_button.clicked.connect(self.search_by_signature)
+        sig_search_button = UIHelpers.button(
+            "Search by Signature", self.search_by_signature)
         sig_layout.addWidget(sig_search_button)
 
         layout.addLayout(sig_layout)
@@ -343,19 +393,16 @@ class NativeViewerUI(QMainWindow):
         self.find_reg_result = QLabel("Result will be shown here")
         layout.addWidget(self.find_reg_result)
 
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(separator)
+        layout.addWidget(UIHelpers.separator())
 
-        build_label = QLabel("<b>Find Game Build:</b>")
+        build_label = UIHelpers.section_label("<b>Find Game Build:</b>")
         build_label.setToolTip(
             "Find the game build version string in the executable")
         layout.addWidget(build_label)
 
         build_layout = QHBoxLayout()
-        build_search_button = QPushButton("Find Game Build")
-        build_search_button.clicked.connect(self.find_game_build)
+        build_search_button = UIHelpers.button(
+            "Find Game Build", self.find_game_build)
         build_layout.addWidget(build_search_button)
 
         layout.addLayout(build_layout)
@@ -363,19 +410,18 @@ class NativeViewerUI(QMainWindow):
         self.build_result = QLabel("Game build will be shown here")
         layout.addWidget(self.build_result)
 
-        separator2 = QFrame()
-        separator2.setFrameShape(QFrame.Shape.HLine)
-        separator2.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(separator2)
+        layout.addWidget(UIHelpers.separator())
 
-        natives_json_label = QLabel("<b>RDR3natives.json Operations:</b>")
+        natives_json_label = UIHelpers.section_label(
+            "<b>RDR3natives.json Operations:</b>")
         natives_json_label.setToolTip(
             "Work with RDR3natives.json file to get native names and namespaces")
         layout.addWidget(natives_json_label)
 
         natives_json_layout = QHBoxLayout()
 
-        load_natives_json_button = QPushButton("Reload Native Names")
+        load_natives_json_button = UIHelpers.button(
+            "Reload Native Names", lambda: None)
         load_natives_json_button.setToolTip(
             "Reload native names from local RDR3natives.json file")
         natives_json_layout.addWidget(load_natives_json_button)
@@ -397,15 +443,12 @@ class NativeViewerUI(QMainWindow):
         credits_text.setMaximumHeight(200)
         credits_text.setWordWrap(True)
         layout.addWidget(credits_text)
-        separator = QFrame()
-        separator.setFrameShape(QFrame.Shape.HLine)
-        separator.setFrameShadow(QFrame.Shadow.Sunken)
-        layout.addWidget(separator)
+        layout.addWidget(UIHelpers.separator())
         layout.addWidget(QLabel("<b>Community & Support:</b>"))
         discord_layout = QHBoxLayout()
         discord_layout.addWidget(QLabel("Join our Discord community:"))
-        discord_button = QPushButton("Join Discord Server")
-        discord_button.clicked.connect(self.copy_discord_invite)
+        discord_button = UIHelpers.button(
+            "Join Discord Server", self.copy_discord_invite)
         discord_layout.addWidget(discord_button)
         layout.addLayout(discord_layout)
         discord_info = QLabel("Discord Invite: S4pRcx5Sua")
@@ -688,13 +731,8 @@ class NativeViewerUI(QMainWindow):
                 3000, lambda: self.settings_status_label.setText(""))
 
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"An error occurred while saving settings: {str(e)}",
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.StandardButton.NoButton
-            )
+            UIHelpers.error(self, "Error",
+                            f"An error occurred while saving settings: {str(e)}")
 
     def load_settings(self):
         try:
@@ -716,15 +754,14 @@ class NativeViewerUI(QMainWindow):
 
     def reset_settings(self):
         try:
-            reply = QMessageBox.question(
+            reply_yes = UIHelpers.ask_yes_no(
                 self,
                 "Reset Settings",
                 "Are you sure you want to reset all settings to default values?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No
+                default_yes=False,
             )
 
-            if reply == QMessageBox.StandardButton.Yes:
+            if reply_yes:
                 self.register_native_name = DEFAULT_REGISTER_NATIVE_NAME
                 self.offset_to_hash = OFFSET_TO_HASH
                 self.offset_to_lea = OFFSET_TO_LEA
@@ -745,13 +782,8 @@ class NativeViewerUI(QMainWindow):
                     3000, lambda: self.settings_status_label.setText(""))
 
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"An error occurred while resetting settings: {str(e)}",
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.StandardButton.NoButton
-            )
+            UIHelpers.error(self, "Error",
+                            f"An error occurred while resetting settings: {str(e)}")
 
     def export_settings(self):
         try:
@@ -782,13 +814,8 @@ class NativeViewerUI(QMainWindow):
                 3000, lambda: self.settings_status_label.setText(""))
 
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"An error occurred while exporting settings: {str(e)}",
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.StandardButton.NoButton
-            )
+            UIHelpers.error(self, "Error",
+                            f"An error occurred while exporting settings: {str(e)}")
 
     def import_settings(self):
         try:
@@ -809,13 +836,8 @@ class NativeViewerUI(QMainWindow):
                              "offset_to_hash", "offset_to_lea"]
             for key in required_keys:
                 if key not in settings_dict:
-                    QMessageBox.warning(
-                        self,
-                        "Invalid Settings File",
-                        f"The settings file is missing the '{key}' setting.",
-                        QMessageBox.StandardButton.Ok,
-                        QMessageBox.StandardButton.NoButton
-                    )
+                    UIHelpers.warn(self, "Invalid Settings File",
+                                   f"The settings file is missing the '{key}' setting.")
                     return
 
             self.register_native_name = settings_dict["register_native_name"]
@@ -842,21 +864,11 @@ class NativeViewerUI(QMainWindow):
                 3000, lambda: self.settings_status_label.setText(""))
 
         except json.JSONDecodeError:
-            QMessageBox.critical(
-                self,
-                "Error",
-                "The selected file is not a valid JSON file.",
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.StandardButton.NoButton
-            )
+            UIHelpers.error(
+                self, "Error", "The selected file is not a valid JSON file.")
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"An error occurred while importing settings: {str(e)}",
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.StandardButton.NoButton
-            )
+            UIHelpers.error(self, "Error",
+                            f"An error occurred while importing settings: {str(e)}")
 
     def view_function(self, addr: int) -> None:
         try:
@@ -865,19 +877,11 @@ class NativeViewerUI(QMainWindow):
                 ida_kernwin = importlib.import_module('ida_kernwin')
                 ida_kernwin.jumpto(addr)
             except (ImportError, ModuleNotFoundError):
-                QMessageBox.information(
-                    self,
-                    "View Function",
-                    f"Viewing function at {hex(addr)} (In IDA Pro this would jump to the function)"
-                )
+                UIHelpers.info(self, "View Function",
+                               f"Viewing function at {hex(addr)} (In IDA Pro this would jump to the function)")
         except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"An error occurred while trying to view the function: {str(e)}",
-                QMessageBox.StandardButton.Ok,
-                QMessageBox.StandardButton.NoButton
-            )
+            UIHelpers.error(
+                self, "Error", f"An error occurred while trying to view the function: {str(e)}")
 
     def show_context_menu(self, position: Any) -> None:
         row = self.natives_table.rowAt(position.y())
@@ -986,15 +990,14 @@ class NativeViewerUI(QMainWindow):
                 self.find_reg_result.setStyleSheet(
                     "color: green; font-weight: bold;")
 
-                reply = QMessageBox.question(
+                reply_yes = UIHelpers.ask_yes_no(
                     self,
                     "Function Found",
                     f"RegisterNative function found at {address_text}.\nDo you want to update your settings with this function name?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.Yes
+                    default_yes=True,
                 )
 
-                if reply == QMessageBox.StandardButton.Yes:
+                if reply_yes:
                     self.register_native_name = reg_name
                     self.register_native_name_input.setText(reg_name)
                     self.settings.setValue("register_native_name", reg_name)
@@ -1051,25 +1054,21 @@ class NativeViewerUI(QMainWindow):
                 self.find_reg_result.setStyleSheet(
                     "color: green; font-weight: bold;")
 
-                reply = QMessageBox.question(
+                reply_yes = UIHelpers.ask_yes_no(
                     self,
                     "Function Found",
                     f"RegisterNative function found at {address_text}.\nDo you want to view this function?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.Yes
+                    default_yes=True,
                 )
 
-                if reply == QMessageBox.StandardButton.Yes:
+                if reply_yes:
                     try:
                         import importlib
                         ida_kernwin = importlib.import_module('ida_kernwin')
                         ida_kernwin.jumpto(address_to_use)
                     except (ImportError, ModuleNotFoundError):
-                        QMessageBox.information(
-                            self,
-                            "View Function",
-                            f"Would jump to function at {address_text} in IDA Pro"
-                        )
+                        UIHelpers.info(
+                            self, "View Function", f"Would jump to function at {address_text} in IDA Pro")
             else:
                 self.find_reg_result.setText(
                     "No matches found for the signature")
@@ -1141,13 +1140,8 @@ class NV_DB():
         try:
             if not natives:
                 if self.parent:
-                    QMessageBox.warning(
-                        self.parent,
-                        "No Data",
-                        "No native functions to save. Please load natives first.",
-                        QMessageBox.StandardButton.Ok,
-                        QMessageBox.StandardButton.NoButton
-                    )
+                    UIHelpers.warn(self.parent, "No Data",
+                                   "No native functions to save. Please load natives first.")
                 return False
 
             if db_path is None and self.parent:
@@ -1155,33 +1149,25 @@ class NV_DB():
 
             if not db_path:
                 if self.parent:
-                    QMessageBox.warning(
-                        self.parent,
-                        "No Database File",
-                        "Please specify a database file path.",
-                        QMessageBox.StandardButton.Ok,
-                        QMessageBox.StandardButton.NoButton
-                    )
+                    UIHelpers.warn(self.parent, "No Database File",
+                                   "Please specify a database file path.")
                 return False
 
             db_path = str(db_path)
 
             if os.path.exists(db_path) and self.parent:
-                reply = QMessageBox.question(
+                overwrite = UIHelpers.ask_yes_no(
                     self.parent,
                     "File Exists",
                     f"The file {os.path.basename(db_path)} already exists. Do you want to overwrite it?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No
+                    default_yes=False,
                 )
-                if reply == QMessageBox.StandardButton.No:
+                if not overwrite:
                     return False
             progress = None
             if self.parent:
-                progress = QProgressDialog(
-                    "Saving natives to database...", "Cancel", 0, len(natives), self.parent)
-                progress.setWindowTitle("Saving to Database")
-                progress.setValue(0)
+                progress = UIHelpers.progress(
+                    self.parent, "Saving to Database", "Saving natives to database...", len(natives))
             conn = sqlite3.connect(db_path)
             cursor = conn.cursor()
 
@@ -1259,13 +1245,8 @@ class NV_DB():
                 pass  # Connection might already be closed
 
             if self.parent:
-                QMessageBox.critical(
-                    self.parent,
-                    "Database Error",
-                    f"A database error occurred: {str(e)}",
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.StandardButton.NoButton
-                )
+                UIHelpers.error(self.parent, "Database Error",
+                                f"A database error occurred: {str(e)}")
                 self.parent.show_status_message(f"Error: {str(e)}")
 
             print(f"Database error: {str(e)}")
@@ -1274,13 +1255,8 @@ class NV_DB():
 
         except Exception as e:
             if self.parent:
-                QMessageBox.critical(
-                    self.parent,
-                    "Error",
-                    f"An error occurred: {str(e)}",
-                    QMessageBox.StandardButton.Ok,
-                    QMessageBox.StandardButton.NoButton
-                )
+                UIHelpers.error(self.parent, "Error",
+                                f"An error occurred: {str(e)}")
                 self.parent.show_status_message(f"Error: {str(e)}")
 
             return False
@@ -1297,16 +1273,16 @@ class NV_DB():
                         self.parent.db_file_path.setText(db_path)
                     else:
                         if self.parent:
-                            QMessageBox.warning(self.parent, "No Database File", "Please specify a database file path.",
-                                                QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.NoButton)
+                            UIHelpers.warn(self.parent, "No Database File",
+                                           "Please specify a database file path.")
                         return None
             if not db_path:
                 print("Error: No database path provided")
                 return None
             if not os.path.exists(db_path):
                 if self.parent:
-                    QMessageBox.warning(
-                        self.parent, "File Not Found", f"The database file {db_path} does not exist.", QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.NoButton)
+                    UIHelpers.warn(self.parent, "File Not Found",
+                                   f"The database file {db_path} does not exist.")
                 return None
 
             conn = sqlite3.connect(db_path)
@@ -1315,8 +1291,8 @@ class NV_DB():
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='natives'")
             if not cursor.fetchone():
                 if self.parent:
-                    QMessageBox.warning(self.parent, "Invalid Database", "This database does not contain a natives table.",
-                                        QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.NoButton)
+                    UIHelpers.warn(self.parent, "Invalid Database",
+                                   "This database does not contain a natives table.")
                 conn.close()
                 return None
 
@@ -1330,9 +1306,9 @@ class NV_DB():
                 metadata_str = "No metadata available"
             if self.parent:
                 db_filename = os.path.basename(str(db_path))
-                reply = QMessageBox.question(self.parent, "Load Natives", f"Load natives from {db_filename}?\n\nDatabase Information:\n{metadata_str}",
-                                             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.Yes)
-                if reply == QMessageBox.StandardButton.No:
+                proceed = UIHelpers.ask_yes_no(
+                    self.parent, "Load Natives", f"Load natives from {db_filename}?\n\nDatabase Information:\n{metadata_str}", default_yes=True)
+                if not proceed:
                     conn.close()
                     return None
 
@@ -1340,10 +1316,8 @@ class NV_DB():
             total_natives = cursor.fetchone()[0]
             progress = None
             if self.parent:
-                progress = QProgressDialog(
-                    "Loading natives from database...", "Cancel", 0, total_natives, self.parent)
-                progress.setWindowTitle("Loading from Database")
-                progress.setValue(0)
+                progress = UIHelpers.progress(
+                    self.parent, "Loading from Database", "Loading natives from database...", total_natives)
             cursor.execute("PRAGMA table_info(natives)")
             columns = {column_info[1] for column_info in cursor.fetchall()}
             natives: List[Dict[str, Any]] = []
@@ -1414,20 +1388,17 @@ class NV_DB():
             except:
                 pass
             if self.parent:
-                QMessageBox.critical(
-                    self.parent, "Database Error", f"A database error occurred: {str(e)}", QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.NoButton)
+                UIHelpers.error(self.parent, "Database Error",
+                                f"A database error occurred: {str(e)}")
                 self.parent.show_status_message(f"Error: {str(e)}")
             print(f"Database error: {str(e)}")
             return None
         except Exception as e:
             if self.parent:
-                QMessageBox.critical(
-                    self.parent, "Error", f"An error occurred: {str(e)}", QMessageBox.StandardButton.Ok, QMessageBox.StandardButton.NoButton)
+                UIHelpers.error(self.parent, "Error",
+                                f"An error occurred: {str(e)}")
                 self.parent.show_status_message(f"Error: {str(e)}")
             return None
-
-
-_native_viewer_window = None
 
 
 def run():
