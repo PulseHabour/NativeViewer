@@ -1,3 +1,4 @@
+import datetime
 from idaapi import require  # noqa
 require('NV_Utils')  # noqa
 
@@ -70,7 +71,10 @@ class NativeViewerUI(QMainWindow):
         # Initialize debounce timer for search filtering
         self.filter_timer = QTimer()
         self.filter_timer.setSingleShot(True)
-        self.filter_timer.timeout.connect(self._perform_filter)
+        self.filter_timer.timeout.connect(self.filter_table)
+
+        self.lastFilteredNatives = []
+        self.lastSearchText = ""
 
         # Initialize database manager with parent reference
         self.DB = NV_DB(self)
@@ -476,7 +480,7 @@ class NativeViewerUI(QMainWindow):
                     namespace = self.native_names_map[hash_str].get(
                         'namespace', '')
 
-                self.natives.append({
+                native_entry = {
                     'hash': hash_val,
                     'hex_hash': f"0x{hash_val:016X}",
                     'addr': func_addr,
@@ -484,7 +488,18 @@ class NativeViewerUI(QMainWindow):
                     'name': func_name,
                     'native_name': native_name,
                     'namespace': namespace
-                })
+                }
+                
+                # Pre-compute search string for faster filtering
+                native_entry['search_string'] = (
+                    native_entry['hex_hash'].lower() + ' ' +
+                    native_entry['hex_addr'].lower() + ' ' +
+                    native_entry['name'].lower() + ' ' +
+                    native_entry['native_name'].lower() + ' ' +
+                    native_entry['namespace'].lower()
+                )
+                
+                self.natives.append(native_entry)
 
             # Populate table
             self.update_table()
@@ -573,6 +588,17 @@ class NativeViewerUI(QMainWindow):
         self.natives_table.setRowCount(len(self.natives))
         self.natives_table.setSortingEnabled(False)
 
+        # Ensure all natives have search strings for performance
+        for native in self.natives:
+            if 'search_string' not in native:
+                native['search_string'] = (
+                    native.get('hex_hash', '').lower() + ' ' +
+                    native.get('hex_addr', '').lower() + ' ' +
+                    native.get('name', '').lower() + ' ' +
+                    native.get('native_name', '').lower() + ' ' +
+                    native.get('namespace', '').lower()
+                )
+
         for row, native in enumerate(self.natives):
             self.insert_native_table_row(row, native)
 
@@ -602,52 +628,63 @@ class NativeViewerUI(QMainWindow):
         This method is called on every text change and restarts the timer
         to delay the actual filtering until the user stops typing.
         """
-        # Stop the existing timer if it's running
+
         self.filter_timer.stop()
-        # Start the timer with 300ms delay (adjust as needed)
         self.filter_timer.start(300)
 
-    def _perform_filter(self):
-        """Perform the actual filtering after the debounce delay.
-
-        This is the method that actually executes the filter logic
-        after the user has stopped typing for the debounce period.
-        """
-        self.filter_table()
-
     def filter_table(self):
-        """Filter the table based on search text.
-
-        Filters the natives list based on the search text and updates the table
-        to show only matching entries.
-        """
+        """Filter the table based on search text using row hiding for better performance."""
+        start = datetime.datetime.now()
         search_text = self.search_box.text().lower()
 
-        # If search is empty, show all
+        # If search is empty, show all rows
         if not search_text:
-            self.natives_table.setRowCount(len(self.natives))
-            self.update_table()
+            for row in range(self.natives_table.rowCount()):
+                self.natives_table.setRowHidden(row, False)
+            self.lastFilteredNatives = self.natives
+            self.lastSearchText = search_text
             return
 
-        # Filter natives
+        # Hide/show rows based on search instead of recreating table
+        visible_count = 0
         filtered_natives = []
-        for native in self.natives:
-            # Include native_name in the search if it exists
-            native_name = native.get('native_name', "").lower()
+        
+        # Disable updates during bulk operations for better performance
+        self.natives_table.setUpdatesEnabled(False)
+        
+        for row in range(self.natives_table.rowCount()):
+            if row < len(self.natives):
+                native = self.natives[row]
+                
+                # Use pre-computed search string if available
+                if 'search_string' in native:
+                    matches = search_text in native['search_string']
+                else:
+                    # Fallback to individual field search
+                    matches = (search_text in native['hex_hash'].lower() or
+                             search_text in native['hex_addr'].lower() or
+                             search_text in native['name'].lower() or
+                             search_text in native['namespace'].lower() or
+                             search_text in native['native_name'].lower())
+                
+                if matches:
+                    self.natives_table.setRowHidden(row, False)
+                    filtered_natives.append(native)
+                    visible_count += 1
+                else:
+                    self.natives_table.setRowHidden(row, True)
+            else:
+                # Hide any extra rows
+                self.natives_table.setRowHidden(row, True)
+        
+        # Re-enable updates
+        self.natives_table.setUpdatesEnabled(True)
 
-            if (search_text in native['hex_hash'].lower() or
-                search_text in native['hex_addr'].lower() or
-                search_text in native['name'].lower() or
-                    search_text in native_name):
-                filtered_natives.append(native)
+        self.lastFilteredNatives = filtered_natives
+        self.lastSearchText = search_text
 
-        self.natives_table.setSortingEnabled(False)
-        self.natives_table.setRowCount(len(filtered_natives))
-
-        for row, native in enumerate(filtered_natives):
-            self.insert_native_table_row(row, native)
-
-        self.natives_table.setSortingEnabled(True)
+        end = datetime.datetime.now()
+        print(f"Filter took {(end - start).total_seconds()} seconds, showing {visible_count} items")
 
     def save_settings(self):
         try:
@@ -1563,7 +1600,7 @@ class NV_DB():
                     '0x') else int(addr)
 
                 # Create native entry
-                natives.append({
+                native_entry = {
                     'hash': int_hash,
                     'hex_hash': hash_val,
                     'addr': int_addr,
@@ -1571,7 +1608,18 @@ class NV_DB():
                     'name': name,
                     'native_name': native_name,
                     'namespace': namespace
-                })
+                }
+                
+                # Pre-compute search string for faster filtering
+                native_entry['search_string'] = (
+                    native_entry['hex_hash'].lower() + ' ' +
+                    native_entry['hex_addr'].lower() + ' ' +
+                    native_entry['name'].lower() + ' ' +
+                    native_entry['native_name'].lower() + ' ' +
+                    native_entry['namespace'].lower()
+                )
+                
+                natives.append(native_entry)
 
                 # Update progress if UI parent exists
                 if progress:
