@@ -2,6 +2,8 @@
 
 This tool helps identify RDR2 native functions in the Red Dead Redemption 2 executable using IDA Pro.
 
+[Discord](https://discord.gg/S4pRcx5Sua)
+
 ## Project Structure
 
 The project has been organized into separate modules for better maintainability:
