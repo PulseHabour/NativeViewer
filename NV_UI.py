@@ -661,6 +661,12 @@ class NativeViewerUI(QMainWindow):
         self.show_status_message(
             f"Discord invite copied to clipboard: {full_invite}")
 
+        # get os type
+        if os.name == 'nt':  # Windows
+            os.system(f'start {full_invite}')
+        elif os.name == 'posix':  # macOS
+            os.system(f'open {full_invite}')
+
     def prompt_load_natives(self) -> None:
         """
         Show initial dialog to prompt user for loading natives.
