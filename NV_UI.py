@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QHBoxLayout,
+    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QPushButton,
@@ -50,7 +51,7 @@ APP_ORGANIZATION = "RDR2Tools"
 APP_DOMAIN = "NativeViewer"
 
 # UI Constants
-WINDOW_WIDTH = 1000
+WINDOW_WIDTH = 1400
 WINDOW_HEIGHT = 700
 FILTER_DELAY_MS = 300
 PROGRESS_MESSAGE_DURATION_MS = 3000
@@ -241,6 +242,38 @@ class NativeViewerUI(QMainWindow):
     Features include advanced filtering, native name resolution, and settings management.
     """
 
+    # Class-level UI attribute annotations for analyzers
+    # Natives tab
+    filter_hash_cb: QCheckBox
+    filter_addr_cb: QCheckBox
+    filter_name_cb: QCheckBox
+    filter_native_name_cb: QCheckBox
+    filter_namespace_cb: QCheckBox
+    search_box: QLineEdit
+    natives_table: QTableWidget
+    natives_count_label: QLabel
+    detail_panel: QWidget
+    detail_title_label: QLabel
+    detail_info_label: QLabel
+    detail_args_label: QLabel
+    detail_description_label: QLabel
+
+    # Settings tab
+    register_native_name_input: QLineEdit
+    hash_offset_input: QLineEdit
+    lea_offset_input: QLineEdit
+    settings_status_label: QLabel
+    db_file_path: QLineEdit
+
+    # Tools tab
+    ida_register_name_input: QLineEdit
+    ida_load_status: QLabel
+    find_reg_name_input: QLineEdit
+    reg_signature_input: QLineEdit
+    find_reg_result: QLabel
+    build_result: QLabel
+    natives_json_status: QLabel
+
     def __init__(self, clipboard: QClipboard):
         """
         Initialize the Native Viewer UI.
@@ -261,31 +294,11 @@ class NativeViewerUI(QMainWindow):
         self.last_filtered_natives: List[Dict[str, Any]] = []
         self.last_search_text: str = ""
 
-        # UI component attributes (will be initialized in setup methods)
-        self.filter_hash_cb: QCheckBox
-        self.filter_addr_cb: QCheckBox
-        self.filter_name_cb: QCheckBox
-        self.filter_native_name_cb: QCheckBox
-        self.filter_namespace_cb: QCheckBox
-        self.search_box: QLineEdit
-        self.natives_table: QTableWidget
-        self.natives_count_label: QLabel
+        # UI components will be created in setup methods
+        self.current_selected_native = None
 
-        # Settings UI components
-        self.register_native_name_input: QLineEdit
-        self.hash_offset_input: QLineEdit
-        self.lea_offset_input: QLineEdit
-        self.settings_status_label: QLabel
-        self.db_file_path: QLineEdit
-
-        # Tools UI components
-        self.ida_register_name_input: QLineEdit
-        self.ida_load_status: QLabel
-        self.find_reg_name_input: QLineEdit
-        self.reg_signature_input: QLineEdit
-        self.find_reg_result: QLabel
-        self.build_result: QLabel
-        self.natives_json_status: QLabel
+    # Settings/Tools UI components will be created during tab setup
+    # (attributes are defined during tab setup methods)
 
         # Timer for filtering
         self.filter_timer = QTimer()
@@ -301,7 +314,7 @@ class NativeViewerUI(QMainWindow):
         self._setup_ui()
 
         # Load data
-        self.load_native_names()
+        self.load_native_names()  # Load native names from JSON file
         self.prompt_load_natives()
 
     def _initialize_window(self) -> None:
@@ -342,14 +355,37 @@ class NativeViewerUI(QMainWindow):
         # Setup search and filter controls
         self._setup_search_controls(layout)
 
-        # Setup natives count label
+        # Setup natives count label with minimal space
         self.natives_count_label = QLabel("0/0")
         self.natives_count_label.setStyleSheet(
-            "font-weight: bold; color: white;")
+            "font-weight: bold; color: white; padding: 4px 8px;")
+        from PySide6.QtWidgets import QSizePolicy
+        self.natives_count_label.setSizePolicy(
+            QSizePolicy.Policy.Preferred,
+            QSizePolicy.Policy.Minimum)
         layout.addWidget(self.natives_count_label)
 
-        # Setup natives table
-        self._setup_natives_table(layout)
+        # Setup natives table + detail side panel in a splitter
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setChildrenCollapsible(False)
+
+        # Left: table
+        table_container = QWidget()
+        table_layout = QVBoxLayout(table_container)
+        table_layout.setContentsMargins(0, 0, 0, 0)
+        self._setup_natives_table(table_layout)
+        splitter.addWidget(table_container)
+
+        # Right: detail panel
+        self.detail_panel = QWidget()
+        self._setup_detail_panel(self.detail_panel)
+        splitter.addWidget(self.detail_panel)
+
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 1)
+
+        # Make the splitter take up all remaining space
+        layout.addWidget(splitter, 1)
 
     def _setup_search_controls(self, layout: QVBoxLayout) -> None:
         """Setup search box and filter checkboxes."""
@@ -405,10 +441,10 @@ class NativeViewerUI(QMainWindow):
         self.natives_table = QTableWidget()
         self.natives_table.setEditTriggers(
             QTableWidget.EditTrigger.NoEditTriggers)
-        self.natives_table.setColumnCount(6)
+        self.natives_table.setColumnCount(5)
         self.natives_table.setHorizontalHeaderLabels([
             "Hash", "Address", "Function Name",
-            "Native Name", "Native Namespace", "Actions"
+            "Native Name", "Native Namespace"
         ])
 
         # Setup context menu
@@ -420,10 +456,257 @@ class NativeViewerUI(QMainWindow):
         # Configure table headers
         self._configure_table_headers()
 
+        # Connect selection change to update detail panel
+        self.natives_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectRows)
+        self.natives_table.setSelectionMode(
+            QTableWidget.SelectionMode.SingleSelection)
+        self.natives_table.itemSelectionChanged.connect(
+            self._on_table_selection_changed)
+
         layout.addWidget(self.natives_table)
+
+    def _setup_detail_panel(self, panel: QWidget) -> None:
+        """Initialize the right-hand detail panel UI."""
+        v = QVBoxLayout(panel)
+        v.setContentsMargins(8, 0, 0, 0)
+
+        self.detail_title_label = QLabel("Select a native to see details")
+        self.detail_title_label.setStyleSheet(
+            "font-weight: bold; font-size: 14px;")
+        self.detail_title_label.setWordWrap(True)
+        v.addWidget(self.detail_title_label)
+
+        self.detail_info_label = QLabel("")
+        self.detail_info_label.setWordWrap(True)
+        v.addWidget(self.detail_info_label)
+
+        v.addWidget(UIHelpers.create_separator())
+
+        v.addWidget(UIHelpers.create_section_label("<b>Arguments:</b>"))
+        self.detail_args_label = QLabel("-")
+        self.detail_args_label.setWordWrap(True)
+        v.addWidget(self.detail_args_label)
+
+        v.addWidget(UIHelpers.create_separator())
+
+        v.addWidget(UIHelpers.create_section_label("<b>Description:</b>"))
+        self.detail_description_label = QLabel("-")
+        self.detail_description_label.setWordWrap(True)
+        v.addWidget(self.detail_description_label)
+
+        v.addWidget(UIHelpers.create_separator())
+
+        actions_row1 = QHBoxLayout()
+        actions_row2 = QHBoxLayout()
+        # Buttons will act on current_selected_native
+        actions_row1.addWidget(UIHelpers.create_button(
+            "Goto in IDA", self._action_goto_in_ida, "Jump to function address in IDA"))
+        actions_row1.addWidget(UIHelpers.create_button(
+            "Copy Hash", self._action_copy_hash))
+        actions_row1.addWidget(UIHelpers.create_button(
+            "Copy Addr", self._action_copy_addr))
+        actions_row2.addWidget(UIHelpers.create_button(
+            "Copy Name", self._action_copy_func_name))
+        actions_row2.addWidget(UIHelpers.create_button(
+            "Copy Native", self._action_copy_native_name))
+        actions_row2.addWidget(UIHelpers.create_button(
+            "Rename in IDA", self._action_rename_in_ida, "Rename function in IDA to its native name"))
+        actions_row1.addStretch(1)
+        actions_row2.addStretch(1)
+        v.addLayout(actions_row1)
+        v.addLayout(actions_row2)
+
+        v.addStretch(1)
+
+    def _clear_detail_panel(self) -> None:
+        self.current_selected_native = None
+        if hasattr(self, 'detail_title_label') and self.detail_title_label:
+            self.detail_title_label.setText("Select a native to see details")
+        if hasattr(self, 'detail_info_label') and self.detail_info_label:
+            self.detail_info_label.setText("")
+        if hasattr(self, 'detail_args_label') and self.detail_args_label:
+            self.detail_args_label.setText("-")
+        if hasattr(self, 'detail_description_label') and self.detail_description_label:
+            self.detail_description_label.setText("-")
+
+    def _on_table_selection_changed(self) -> None:
+        row = self.natives_table.currentRow()
+        if row < 0:
+            self._clear_detail_panel()
+            return
+
+        # Get native from main list using stored row index
+        item = self.natives_table.item(row, 0)
+        native: Optional[Dict[str, Any]] = None
+
+        if item is not None:
+            try:
+                stored_row = item.data(Qt.ItemDataRole.UserRole)
+                if isinstance(stored_row, int) and 0 <= stored_row < len(self.natives):
+                    native = self.natives[stored_row]
+            except Exception:
+                pass
+
+        # Fallback: reconstruct from table if UserRole missing or invalid
+        if not native:
+            row_data = self._get_table_row_data(row)
+            # Find by hash match in self.natives
+            native = next((n for n in self.natives if n.get(
+                'hex_hash') == row_data['hash']), None)
+
+        if native:
+            self.current_selected_native = native
+            self._update_detail_panel(native)
+        else:
+            self._clear_detail_panel()
+
+    def _update_detail_panel(self, native: Dict[str, Any]) -> None:
+        # Title: Native Name with arguments or Function Name
+        native_name = native.get('native_name') or "<Unnamed>"
+        namespace = native.get('namespace') or ""
+        func_name = native.get('name') or ""
+        args_value = native.get('args')
+        return_value = native.get('return_type')
+
+        title = f'{return_value} {native_name}'
+        if not native.get('native_name') and func_name:
+            title = f'{return_value} {func_name}'
+
+        # Add arguments to title if available
+        if args_value:
+            args_str = self._format_args_for_display(args_value)
+            if args_str != "-":
+                # Format args as a single line for title
+                args_formatted = args_str.replace('\n', ', ')
+                title += f"({args_formatted})"
+
+        self.detail_title_label.setText(title)
+
+        # Info: Namespace, Hash, Address, Function Name
+        info_lines: List[str] = []
+        if namespace:
+            info_lines.append(f"Namespace: {namespace}")
+
+        hash_text = native.get('hex_hash', '')
+        addr_text = native.get('hex_addr', '')
+        info_lines.extend([f"Hash: {hash_text}", f"Address: {addr_text}"])
+
+        if func_name:
+            info_lines.append(f"Function: {func_name}")
+
+        self.detail_info_label.setText("\n".join(info_lines))
+
+        # Args
+        args_value = native.get('args')
+        self.detail_args_label.setText(
+            self._format_args_for_display(args_value))
+
+        # Description
+        desc = native.get('comment') or "-"
+        self.detail_description_label.setText(desc)
+
+    def _format_args_for_display(self, args_value: Any) -> str:
+        if args_value is None:
+            return "-"
+        try:
+            # If it's already a string
+            if isinstance(args_value, str):
+                return args_value if args_value.strip() else "-"
+            # If it's a list (of dicts or strings)
+            if isinstance(args_value, list):
+                from typing import cast
+                items = cast(List[Any], args_value)
+                formatted: List[str] = []
+                for a in items:
+                    if isinstance(a, dict):
+                        ad = cast(Dict[str, Any], a)
+                        t = str(ad.get('type') or ad.get('ctype')
+                                or ad.get('argType') or '')
+                        n = str(ad.get('name') or ad.get('arg') or '')
+                        part = (t + ' ' + n).strip()
+                        formatted.append(part if part else json.dumps(ad))
+                    elif isinstance(a, (str, int, float)):
+                        formatted.append(str(a))
+                    else:
+                        formatted.append(json.dumps(a))
+                return "\n".join(formatted) if formatted else "-"
+            # Fallback to JSON
+            return json.dumps(args_value)
+        except Exception:
+            return "-"
+
+    # Side panel action handlers
+    def _get_selected_native_or_warn(self) -> Optional[Dict[str, Any]]:
+        if self.current_selected_native:
+            return self.current_selected_native
+        self.show_status_message("No native selected", error=True)
+        return None
+
+    def _action_goto_in_ida(self) -> None:
+        native = self._get_selected_native_or_warn()
+        if not native:
+            return
+        addr = native.get('addr')
+        if isinstance(addr, int):
+            self.view_function(addr)
+
+    def _action_copy_hash(self) -> None:
+        native = self._get_selected_native_or_warn()
+        if not native:
+            return
+        value = native.get('hex_hash', '')
+        self.clipboard.setText(value)
+        self.show_status_message(f"Copied hash: {value}")
+
+    def _action_copy_addr(self) -> None:
+        native = self._get_selected_native_or_warn()
+        if not native:
+            return
+        value = native.get('hex_addr', '')
+        self.clipboard.setText(value)
+        self.show_status_message(f"Copied address: {value}")
+
+    def _action_copy_func_name(self) -> None:
+        native = self._get_selected_native_or_warn()
+        if not native:
+            return
+        value = native.get('name', '')
+        self.clipboard.setText(value)
+        self.show_status_message(f"Copied function name: {value}")
+
+    def _action_copy_native_name(self) -> None:
+        native = self._get_selected_native_or_warn()
+        if not native:
+            return
+        value = native.get('native_name', '')
+        self.clipboard.setText(value)
+        self.show_status_message(f"Copied native name: {value}")
+
+    def _action_rename_in_ida(self) -> None:
+        native = self._get_selected_native_or_warn()
+        if not native:
+            return
+        target_name = native.get('native_name') or native.get('name')
+        addr = native.get('addr')
+        if not target_name or not isinstance(addr, int):
+            self.show_status_message(
+                "No name or address available to rename", error=True)
+            return
+        try:
+            import importlib
+            idc = importlib.import_module('idc')
+            idc.set_name(addr, target_name)
+            self.show_status_message(
+                f"Renamed function at {hex(addr)} to {target_name}")
+        except Exception:
+            self.show_status_message(
+                "Rename in IDA not available in this environment", error=True)
 
     def _configure_table_headers(self) -> None:
         """Configure table header properties and resize modes."""
+        if not self.natives_table:
+            return
         # Hide vertical header (row numbers)
         vertical_header = self.natives_table.verticalHeader()
         if vertical_header:
@@ -432,10 +715,10 @@ class NativeViewerUI(QMainWindow):
         # Configure horizontal header
         header = self.natives_table.horizontalHeader()
         if header:
-            resize_mode = QHeaderView.ResizeMode.ResizeToContents
-            for column in range(5):  # Columns 0-4
-                header.setSectionResizeMode(column, resize_mode)
-            header.setStretchLastSection(True)  # Last column stretches
+            # Set header 0 (Hash) to fixed width
+            header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+            header.resizeSection(0, 150)  # Fixed width for Hash column
+            header.setStretchLastSection(True)
 
     def _setup_settings_tab(self):
         settings_tab = QWidget()
@@ -741,10 +1024,16 @@ class NativeViewerUI(QMainWindow):
 
             native_name = ""
             namespace = ""
+            extra_args: Any = None
+            comment: str = ""
+            return_type = "void"
             if hash_str in self.native_names_map:
                 native_info = self.native_names_map[hash_str]
                 native_name = native_info.get('name', '')
                 namespace = native_info.get('namespace', '')
+                extra_args = native_info.get('args')
+                comment = native_info.get('comment', '')
+                return_type = native_info.get('return_type', 'void')
 
             native_entry: Dict[str, Any] = {
                 'hash': hash_val,
@@ -753,7 +1042,10 @@ class NativeViewerUI(QMainWindow):
                 'hex_addr': f"0x{func_addr:X}",
                 'name': func_name,
                 'native_name': native_name,
-                'namespace': namespace
+                'namespace': namespace,
+                'args': extra_args,
+                'comment': comment,
+                'return_type': return_type
             }
 
             native_entry['search_string'] = self._generate_search_string(
@@ -814,10 +1106,24 @@ class NativeViewerUI(QMainWindow):
                     # Normalize hash string format
                     normalized_hash = self._normalize_hash_string(hash_str)
 
-                    self.native_names_map[normalized_hash] = {
+                    entry: Dict[str, Any] = {
                         "name": native_info.get("name", ""),
                         "namespace": namespace
                     }
+                    # Capture args & comment if present in JSON
+                    if isinstance(native_info, dict):
+                        from typing import cast
+                        info = cast(Dict[str, Any], native_info)
+                        if 'params' in info:
+                            entry['args'] = info.get('params')
+                        elif 'args' in info:
+                            entry['args'] = info.get('args')
+                        if 'comment' in info:
+                            entry['comment'] = info.get('comment')
+                        if 'return_type' in info:
+                            entry['return_type'] = info.get('return_type')
+
+                    self.native_names_map[normalized_hash] = entry
 
             print(f"Loaded {len(self.native_names_map)} native names and "
                   f"namespaces from {json_path}")
@@ -895,20 +1201,17 @@ class NativeViewerUI(QMainWindow):
         namespace = native.get('namespace', '')
 
         # Set table items
-        self.natives_table.setItem(row, 0, QTableWidgetItem(hex_hash))
+        item0 = QTableWidgetItem(hex_hash)
+        # Store row index instead of native dict to avoid overflow issues
+        try:
+            item0.setData(Qt.ItemDataRole.UserRole, row)
+        except Exception:
+            pass
+        self.natives_table.setItem(row, 0, item0)
         self.natives_table.setItem(row, 1, QTableWidgetItem(hex_addr))
         self.natives_table.setItem(row, 2, QTableWidgetItem(name))
         self.natives_table.setItem(row, 3, QTableWidgetItem(native_name))
         self.natives_table.setItem(row, 4, QTableWidgetItem(namespace))
-
-        # Create view button
-        view_button = QPushButton("View Function")
-        view_button.setToolTip(f"View function at {hex_addr} in IDA Pro")
-        address = native['addr']
-        view_button.clicked.connect(
-            lambda checked=False, addr=address: self.view_function(int(addr))
-        )
-        self.natives_table.setCellWidget(row, 5, view_button)
 
     def _start_filter_timer(self) -> None:
         """Start or restart the filter timer to delay filtering until user stops typing."""
@@ -955,8 +1258,19 @@ class NativeViewerUI(QMainWindow):
         # Apply filtering
         filtered_natives: List[Dict[str, Any]] = []
         for row in range(self.natives_table.rowCount()):
-            if row < len(self.natives):
-                native = self.natives[row]
+            # Get the native data using the stored UserRole index
+            item = self.natives_table.item(row, 0)
+            native = None
+
+            if item is not None:
+                try:
+                    stored_index = item.data(Qt.ItemDataRole.UserRole)
+                    if isinstance(stored_index, int) and 0 <= stored_index < len(self.natives):
+                        native = self.natives[stored_index]
+                except Exception:
+                    pass
+
+            if native is not None:
                 matches = self._check_native_matches_search(
                     native, search_text, filter_options)
 
@@ -2045,6 +2359,22 @@ class NativeViewerDatabase:
             'native_name': native_name,
             'namespace': namespace
         }
+
+        # If JSON map has args/comment for this hash, include them
+        try:
+            norm_hash = hash_val[2:].upper() if hash_val.startswith(
+                '0x') else hash_val.upper()
+            info = self.parent.native_names_map.get(norm_hash) if hasattr(
+                self.parent, 'native_names_map') else None
+            if isinstance(info, dict):
+                if 'args' in info and 'args' not in native_entry:
+                    native_entry['args'] = info.get('args')
+                if 'comment' in info and 'comment' not in native_entry:
+                    native_entry['comment'] = info.get('comment')
+                if 'return_type' in info and 'return_type' not in native_entry:
+                    native_entry['return_type'] = info.get('return_type')
+        except Exception:
+            pass
 
         # Generate search string
         native_entry['search_string'] = self._generate_search_string_for_native(
